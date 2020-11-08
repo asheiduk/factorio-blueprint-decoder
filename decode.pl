@@ -26,11 +26,20 @@ sub read_string(*){
 	return $data;
 }
 
-sub read_unknown(*;$){
+sub read_unknown(*@){
 	my $fh = shift;
-	my $expected = shift // 0x00;
-	my $b = read_u8($fh);
-	$b == $expected or croak;
+	if( @_ ){
+		for my $expected (@_) {
+			my $b = read_u8($fh);
+#			printf "# exp: %02x, read: %02x\n", $expected, $b;
+			$b == $expected or croak sprintf "expected 0x%02x but got 0x%02x", $expected, $b;
+		}
+	}
+	else {
+		my $expected = 0x00;
+		my $b = read_u8($fh);
+		$b == $expected or croak sprintf "expected 0x%02x but got 0x%02x", $expected, $b;
+	}
 }
 
 sub read_count(*){
