@@ -59,36 +59,51 @@ sub read_migrations(*){
 
 sub read_x(*){
 	my $fh = shift;
-	my $x_count = read_u16($fh);
-	printf "categories (?): %d\n", $x_count;
-	for(my $x=0; $x<$x_count; ++$x){
-		my $s1 = read_string($fh);
-		my $y_count = read_count($fh);
-		my $bx = read_u8($fh);
-		printf "[%d] category '%s': %d items, info: %02x\n", $x, $s1, $y_count, $bx;
+	my $cat_count = read_u16($fh);
+	printf "categories: %d\n", $cat_count;
+	for(my $c=0; $c<$cat_count; ++$c){
+	
+		my $cat_name = read_string($fh);
+		my $entry_count = read_count($fh);
 
-		if( $bx == 0 ){
-			for(my $y=0; $y<$y_count; ++$y){
-				my $id = read_u8($fh);
-				my $b = read_u8($fh); 	# ??? (seldom used)
-				my $s2 = read_string($fh);
-				printf "[%d, %d] %02x %02x '%s'\n", $x, $y, $id, $b, $s2;
+		if( $cat_name eq "tile" ){		# TODO: strange exception
+			printf "[%d] category '%s' - entries: %d\n", $c, $cat_name, $entry_count;
+			for(my $e=0; $e<$entry_count; ++$e){
+				my $entry_id = read_u8($fh);
+				my $entry_name = read_string($fh);
+				printf "    [%d] %02x '%s'\n", $e, $entry_id, $entry_name;
 			}
-		}
-		elsif( $bx == 2 ){
-			for(my $y=0; $y<$y_count; ++$y){
-				my $b = read_u8($fh); 	# ???
-				my $s2 = read_string($fh);
-				printf "[%d, %d] %02x '%s'\n", $x, $y, $b, $s2;
-			}
-			my $s3 = read_string($fh);
-			printf "\tadditional category data: '%s'\n", $s3;
+
+			# 000001a0                 04 74 69  6c 65 07 02 08 63 6f 6e  |     .tile...con|
+			# 000001b0  63 72 65 74 65 03 14 68  61 7a 61 72 64 2d 63 6f  |crete..hazard-co|
+			# 000001c0  6e 63 72 65 74 65 2d 6c  65 66 74 04 15 68 61 7a  |ncrete-left..haz|
+			# 000001d0  61 72 64 2d 63 6f 6e 63  72 65 74 65 2d 72 69 67  |ard-concrete-rig|
+			# 000001e0  68 74 05 10 72 65 66 69  6e 65 64 2d 63 6f 6e 63  |ht..refined-conc|
+			# 000001f0  72 65 74 65 06 1c 72 65  66 69 6e 65 64 2d 68 61  |rete..refined-ha|
+			# 00000200  7a 61 72 64 2d 63 6f 6e  63 72 65 74 65 2d 6c 65  |zard-concrete-le|
+			# 00000210  66 74 07 1d 72 65 66 69  6e 65 64 2d 68 61 7a 61  |ft..refined-haza|
+			# 00000220  72 64 2d 63 6f 6e 63 72  65 74 65 2d 72 69 67 68  |rd-concrete-righ|
+			# 00000230  74 08 08 6c 61 6e 64 66  69 6c 6c                 |t..landfill     |
+
+			# tokens: "tile", 07, 02, "concrete", 03, "hazard-concrete-left", 04 "hazard-concrete-right",
+			# 	05, "refined-concrete", 06, "refined-hazard-concrete-left", 07, "refined-hazard-concrete-right",
+			# 	08, "landfill"
+			
 		}
 		else {
-			croak;
-		}
-		
+			printf "[%d] category '%s' - entries: %d\n", $c, $cat_name, $entry_count;
+			read_unknown($fh);
+			for(my $e=0; $e<$entry_count; ++$e){
+				my $id = read_u8($fh);
+				my $b2 = read_u8($fh); 	# only(?) example: 01 01 container/wooden-chest
+				my $entry_name = read_string($fh);
+				printf "    [%d] %02x %02x '%s'\n", $e, $id, $b2, $entry_name;
 
+				if( $b2 != 0 && ( $cat_name ne "container" || $entry_name ne "wooden-chest") ){
+					croak "unexpected/new example of unknown data in category entry: $cat_name, $entry_name, $id: $b2";
+				}
+			}
+		}
 	}
 }
 
