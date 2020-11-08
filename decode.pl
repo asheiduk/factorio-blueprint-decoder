@@ -117,9 +117,25 @@ sub dump_blueprint_library(*){
 	read_x($fh);
 }
 
+sub dump_trailing_data(*){
+	my $fh = shift;
+	my ($count, $data);
+
+	$count = read $fh, $data, 1;
+	if( $count > 0 ){
+		printf "unparsed data:\n";
+		while( $count > 0 ){
+			printf "%02x ", unpack("C", $data);
+			$count = read $fh, $data, 1;
+		}
+		printf "\n";
+	}
+}
+
 
 my $file = $ARGV[0] || "blueprint-storage.dat";
 printf "file: %s\n", $file;
 open(my $fh, "<", $file) or die;
 dump_blueprint_library($fh);
+dump_trailing_data($fh);
 close($fh);
