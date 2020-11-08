@@ -2,6 +2,7 @@
 use v5.26.1;
 use strict;
 use warnings;
+use Data::Dumper;
 use Carp;
 
 
@@ -52,35 +53,48 @@ sub read_count(*){
 sub read_version(*){
 	my $fh = shift;
 	my ($main, $major, $minor, $developer) = (read_u16($fh), read_u16($fh), read_u16($fh),read_u16($fh));
-	return ($main, $major, $minor, $developer);
+	printf "version: %d.%d.%d.%d\n", $main, $major, $minor, $developer;
+	return {
+		main => $main,
+		major => $major,
+		minor => $minor,
+		developer => $developer
+	};
 }
 
 sub read_migrations(*){
 	my $fh = shift;
+	my $result = [];
+	
 	my $count = read_count($fh);
 	printf "migrations: %d\n", $count;
 	for(my $i=0; $i<$count; ++$i){
 		my $mod_name = read_string($fh);
-		my $mod_migration = read_string($fh);
-		printf "[%d] mod '%s', migration '%s'\n", $i, $mod_name, $mod_migration;
+		my $migration_file = read_string($fh);
+		printf "[%d] mod '%s', migration '%s'\n", $i, $mod_name, $migration_file;
+		push @$result, { mod_name => $mod_name, migration_file => $migration_file }
 	}
+	return $result;
 }
 
-sub read_x(*){
+sub read_types(*){
 	my $fh = shift;
+	my $result = {};
+	
 	my $cat_count = read_u16($fh);
 	printf "categories: %d\n", $cat_count;
 	for(my $c=0; $c<$cat_count; ++$c){
 	
 		my $cat_name = read_string($fh);
 		my $entry_count = read_count($fh);
-
+		
 		if( $cat_name eq "tile" ){		# TODO: strange exception
 			printf "[%d] category '%s' - entries: %d\n", $c, $cat_name, $entry_count;
 			for(my $e=0; $e<$entry_count; ++$e){
 				my $entry_id = read_u8($fh);
 				my $entry_name = read_string($fh);
 				printf "    [%d] %02x '%s'\n", $e, $entry_id, $entry_name;
+				$result->{$cat_name."/".$entry_name} = $entry_id;
 			}
 
 			# 000001a0                 04 74 69  6c 65 07 02 08 63 6f 6e  |     .tile...con|
@@ -103,27 +117,30 @@ sub read_x(*){
 			printf "[%d] category '%s' - entries: %d\n", $c, $cat_name, $entry_count;
 			read_unknown($fh);
 			for(my $e=0; $e<$entry_count; ++$e){
-				my $id = read_u8($fh);
+				my $entry_id = read_u8($fh);
 				my $b2 = read_u8($fh); 	# only(?) example: 01 01 container/wooden-chest
 				my $entry_name = read_string($fh);
-				printf "    [%d] %02x %02x '%s'\n", $e, $id, $b2, $entry_name;
-
+				printf "    [%d] %02x %02x '%s'\n", $e, $entry_id, $b2, $entry_name;
+				$result->{$cat_name."/".$entry_name} = $entry_id;
 				if( $b2 != 0 && ( $cat_name ne "container" || $entry_name ne "wooden-chest") ){
-					croak "unexpected/new example of unknown data in category entry: $cat_name, $entry_name, $id: $b2";
+					croak "unexpected/new example of unknown data in category entry: $cat_name, $entry_name, $entry_id: $b2";
 				}
 			}
 		}
 	}
+	return $result;
 }
 
-sub dump_blueprint_library(*){
+sub read_blueprint_library(*){
 	my $fh = shift;
-	my ($main_version, $major_version, $minor_version, $developer_version) = read_version($fh);
-	printf "version: %d.%d.%d.%d\n", $main_version, $major_version, $minor_version, $developer_version;
-	
+	my $result = {};
+
+	$result->{version} = read_version($fh);
 	read_unknown($fh);
-	read_migrations($fh);
-	read_x($fh);
+	$result->{migrations} = read_migrations($fh);
+	$result->{types} = read_types($fh);
+
+	return $result;
 }
 
 sub dump_trailing_data(*){
@@ -145,6 +162,7 @@ sub dump_trailing_data(*){
 my $file = $ARGV[0] || "blueprint-storage.dat";
 printf "file: %s\n", $file;
 open(my $fh, "<", $file) or die;
-dump_blueprint_library($fh);
+my $library = read_blueprint_library($fh);
+print Dumper($library);
 dump_trailing_data($fh);
 close($fh);
