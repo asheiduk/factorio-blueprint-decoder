@@ -254,6 +254,29 @@ sub read_blueprint(*$){
 		#last;
 	}
 
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+
+	my $icon_count = read_count($fh);
+	if($icon_count>0){
+		printf "icons: %s\n", $icon_count;
+		my @icons;
+		for(my $i=0; $i<$icon_count; ++$i){
+			# TODO: The export format is more complex and mentions "type:item".
+			read_unknown($fh);
+			my $type_id = read_u16($fh);
+			if($type_id == 0x00){
+				printf "    [%d] (none)\n", $i;
+				push @icons, undef;
+			}
+			else {
+				my $type_name = get_type_name($library, $type_id);
+				printf "    [%d] '%s' (%04x)\n", $i, $type_name, $type_id;
+				push @icons, $type_name;
+			}
+		}
+		$result->{icons} = \@icons;
+	}
+
 	return $result;
 }
 
@@ -306,7 +329,7 @@ sub read_blueprint_library(*){
 		}
 
 		# TODO: unknown area
-		read_ignore($fh, 21);
+		read_ignore($fh, 11);
 #		last;
 	}
 	
