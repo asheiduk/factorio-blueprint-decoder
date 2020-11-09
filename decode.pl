@@ -32,6 +32,19 @@ sub read_s16(*){
 	return unpack "s<", $data;
 }
 
+sub read_u32(*){
+	my $fh = shift;
+	read $fh, my $data, 4 or croak;
+	return unpack "L<", $data;
+}
+
+sub read_bool(*){
+	my $fh = shift;
+	my $b = read_u8($fh);
+	croak sprintf "invalid boolean value %02x at position 0x%04x", $b, tell($fh)-1 unless $b == 0x00 || $b == 0x01;
+	return $b == 0x01;
+}
+
 sub read_string(*){
 	my $fh = shift;
 	my $length = read_u8($fh);
@@ -204,9 +217,19 @@ sub read_blueprint(*$){
 
 	$result->{description} = read_string($fh);
 
-	read_unknown($fh);
-
-
+	my $snap_to_grid = read_bool($fh);
+	if($snap_to_grid){
+		my $x = read_u32($fh);
+		my $y = read_u32($fh);
+		$result->{"snap-to-grid"} = {
+			x => $x,
+			y => $y
+		};
+		
+		my $absolute_snapping = read_bool($fh);
+		$result->{"absolute-snapping"} = JSON::true if $absolute_snapping;
+	}
+	
 	my $entity_count = read_u16($fh);
 	printf "entities: %d\n", $entity_count;
 	
