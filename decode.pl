@@ -104,7 +104,7 @@ sub read_delta_position(*){
 
 ################################################################
 
-
+# maybe helpfull: https://wiki.factorio.com/Version_string_format
 sub read_version(*){
 	my $fh = shift;
 	my ($main, $major, $minor, $developer) = (read_u16($fh), read_u16($fh), read_u16($fh),read_u16($fh));
