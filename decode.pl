@@ -70,34 +70,36 @@ sub read_count(*){
 
 ################################################################
 
+# maybe helpfull: https://wiki.factorio.com/Data_types
+# maybe helpfull: https://wiki.factorio.com/Types/Position
 sub read_delta_position(*){
 	my $fh = shift;
 
-	my ($delta_x, $delta_y);
-	my $position_format = read_u8($fh);
-	if( $position_format == 0xff ){
-		my $read_delta = sub(*) {
+	# lookahead
+	my $byte = read_u8($fh);
+	if( $byte == 0xff ){
+		my $read_delta = sub() {
 			my $fraction = read_u16($fh);
 			my $integer = read_s16($fh);
 			return $integer +  $fraction / 2**16;
 		};
-		$delta_x = &$read_delta($fh);
-		$delta_y = &$read_delta($fh);
-		read_unknown($fh)
-	}
-	elsif( $position_format == 0x00 ){
-		# TODO: better guess: position_format is indeed the fractional *byte* of x followed
-		# by one byte for integer x and the same for y. Just happens to be that the fractions are
-		# always (?) zero.
-		$delta_x = read_s8($fh);
-		read_unknown($fh, 0x00);
-		$delta_y = read_s8($fh);
+		my $delta_x = $read_delta->();
+		my $delta_y = $read_delta->();
+		read_unknown($fh); 		# TODO: strange thing...
+		return ($delta_x, $delta_y);
 	}
 	else {
-		croak;
+		# undo lookahead :-(
+		$fh->ungetc($byte);
+		my $read_delta = sub() {
+			my $fraction = read_u8($fh);
+			my $integer = read_s8($fh);
+			return $integer +  $fraction / 2**8;
+		};
+		my $delta_x = $read_delta->();
+		my $delta_y = $read_delta->();
+		return ($delta_x, $delta_y);
 	}
-
-	return ($delta_x, $delta_y);
 }
 
 ################################################################
@@ -221,21 +223,15 @@ sub read_blueprint(*$){
 # 	27 03: 807 (dec) x-position of first entity in export is 807.5
 # 	e9 04: 1257(dec) y-position of first entity in export is 1257.5
 
+		# type
 		my $type_id = read_u16($fh);
 		my $type_name = get_type_name($library, $type_id);
 
-		# maybe helpfull: https://wiki.factorio.com/Data_types
-		# maybe helpfull: https://wiki.factorio.com/Types/Position
-
-		# guess: 0xff indicates long format but as a flag, not in the "space optimized" sense.
-		#  0x7f, 0x80 are the fractional part
-		# (16 bit instead of 8 bit) of x, followed by x followed by fractional part (2 bytes)
-		# for y and two more byte for y. I.e. the "space optimized" indicator 0xff is for the
-		# complete position, not for each value.
-
+		# position
 		my ($delta_x, $delta_y) = read_delta_position($fh);
 		my ($x, $y) = ($last_x + $delta_x, $last_y + $delta_y);
 
+		# maybe helpfull: https://wiki.factorio.com/Data_types
 	 	## maybe helpfull: https://wiki.factorio.com/Types/Direction
 
 #	 	read_ignore($fh, )
