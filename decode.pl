@@ -14,10 +14,22 @@ sub read_u8(*){
 	return unpack "C", $data;
 }
 
+sub read_s8(*){
+	my $fh = shift;
+	read $fh, my $data, 1 or croak;
+	return unpack "c", $data;
+}
+
 sub read_u16(*){
 	my $fh = shift;
 	read $fh, my $data, 2 or croak;
-	return unpack "v", $data;
+	return unpack "S<", $data;
+}
+
+sub read_s16(*){
+	my $fh = shift;
+	read $fh, my $data, 2 or croak;
+	return unpack "s<", $data;
 }
 
 sub read_string(*){
@@ -33,14 +45,22 @@ sub read_unknown(*@){
 		for my $expected (@_) {
 			my $b = read_u8($fh);
 #			printf "# exp: %02x, read: %02x\n", $expected, $b;
-			$b == $expected or croak sprintf "expected 0x%02x but got 0x%02x", $expected, $b;
+			$b == $expected or croak sprintf "expected 0x%02x but got 0x%02x at position 0x%x", $expected, $b, tell($fh)-1;
 		}
 	}
 	else {
 		my $expected = 0x00;
 		my $b = read_u8($fh);
-		$b == $expected or croak sprintf "expected 0x%02x but got 0x%02x", $expected, $b;
+		$b == $expected or croak sprintf "expected 0x%02x but got 0x%02x at position 0x%x", $expected, $b, tell($fh)-1;
 	}
+}
+
+sub read_ignore(*$){
+	my $fh = shift;
+	my $length = shift;
+
+	read $fh, my ($data), $length;
+	return $data;
 }
 
 sub read_count(*){
@@ -49,6 +69,39 @@ sub read_count(*){
 }
 
 ################################################################
+
+sub read_delta_position(*){
+	my $fh = shift;
+
+	my ($delta_x, $delta_y);
+	my $position_format = read_u8($fh);
+	if( $position_format == 0xff ){
+		my $read_delta = sub(*) {
+			my $fraction = read_u16($fh);
+			my $integer = read_s16($fh);
+			return $integer +  $fraction / 2**16;
+		};
+		$delta_x = &$read_delta($fh);
+		$delta_y = &$read_delta($fh);
+		read_unknown($fh)
+	}
+	elsif( $position_format == 0x00 ){
+		# TODO: better guess: position_format is indeed the fractional *byte* of x followed
+		# by one byte for integer x and the same for y. Just happens to be that the fractions are
+		# always (?) zero.
+		$delta_x = read_s8($fh);
+		read_unknown($fh, 0x00);
+		$delta_y = read_s8($fh);
+	}
+	else {
+		croak;
+	}
+
+	return ($delta_x, $delta_y);
+}
+
+################################################################
+
 
 sub read_version(*){
 	my $fh = shift;
@@ -117,18 +170,122 @@ sub read_types(*){
 			printf "[%d] category '%s' - entries: %d\n", $c, $cat_name, $entry_count;
 			read_unknown($fh);
 			for(my $e=0; $e<$entry_count; ++$e){
-				my $entry_id = read_u8($fh);
-				my $b2 = read_u8($fh); 	# only(?) example: 01 01 container/wooden-chest
+				# So far only "container/wooden chest" (0x0101) really needs two bytes.
+				my $entry_id = read_u16($fh);
 				my $entry_name = read_string($fh);
-				printf "    [%d] %02x %02x '%s'\n", $e, $entry_id, $b2, $entry_name;
+				printf "    [%d] %04x '%s'\n", $e, $entry_id, $entry_name;
 				$result->{$cat_name."/".$entry_name} = $entry_id;
-				if( $b2 != 0 && ( $cat_name ne "container" || $entry_name ne "wooden-chest") ){
-					croak "unexpected/new example of unknown data in category entry: $cat_name, $entry_name, $entry_id: $b2";
-				}
 			}
 		}
 	}
 	return $result;
+}
+
+sub read_blueprint(*$){
+	my $fh = shift;
+	my $library = shift;
+	my $result = {};
+
+	read_unknown($fh);
+	$result->{label} = read_string($fh);
+	printf "blueprint '%s'", $result->{label};
+
+	
+	# read_unknown($fh, 0x00, 0x00, 0xff, 0xa4, 0x02, 0x00, 0x00);
+	read_ignore($fh, 7);
+	
+	$result->{version} = read_version($fh);
+	
+	read_unknown($fh);
+	
+	$result->{migrations} = read_migrations($fh);
+
+	$result->{description} = read_string($fh);
+
+	read_unknown($fh);
+
+
+	my $entity_count = read_u16($fh);
+	printf "entities: %d\n", $entity_count;
+	
+	read_unknown($fh, 0x00, 0x00);
+	my ($last_x, $last_y) = (0, 0);
+	for(my $e=0; $e<$entity_count; ++$e){
+	
+# 00000360        00 00 97 00 ff 7f  80 27 03 00 80 e9 04 00  |  .......'......|
+# 00000370  20 00 06 04 00 00 00 00  00 00 00 00 97 00 00 00  | ...............|
+#
+# hints:
+#
+# 	97: inserter/inserter
+# 	27 03: 807 (dec) x-position of first entity in export is 807.5
+# 	e9 04: 1257(dec) y-position of first entity in export is 1257.5
+
+		my $type_id = read_u16($fh);
+		my $type_name = get_type_name($library, $type_id);
+
+		# maybe helpfull: https://wiki.factorio.com/Data_types
+		# maybe helpfull: https://wiki.factorio.com/Types/Position
+
+		# guess: 0xff indicates long format but as a flag, not in the "space optimized" sense.
+		#  0x7f, 0x80 are the fractional part
+		# (16 bit instead of 8 bit) of x, followed by x followed by fractional part (2 bytes)
+		# for y and two more byte for y. I.e. the "space optimized" indicator 0xff is for the
+		# complete position, not for each value.
+
+		my ($delta_x, $delta_y) = read_delta_position($fh);
+		my ($x, $y) = ($last_x + $delta_x, $last_y + $delta_y);
+
+	 	## maybe helpfull: https://wiki.factorio.com/Types/Direction
+
+#	 	read_ignore($fh, )
+
+		read_unknown($fh, 0x20, 0x00, 0x06, 0x04);
+		read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+
+		printf "    [%d] x: %g, y: %g, '%s'\n", $e, $x, $y, $type_name;
+		my $entity = {
+			name => $type_name,
+			position => {
+				x => $x,
+				y => $y
+			}
+		};
+		push @{$result->{entities}}, $entity;
+
+		($last_x, $last_y) = ($x, $y);
+
+		#last;
+	}
+
+	return $result;
+}
+
+sub get_type_id($$){
+	my $library = shift;
+	my $key = shift;
+
+	return $library->{types}{$key};
+}
+
+sub get_type_name($$){
+	my $library = shift;
+	my $wanted_id = shift;
+
+	my $types = $library->{types};
+
+	# TODO: this is expensive and excessive. Works for now.
+	my @matches;
+	while(my ($k, $v) = each %$types){
+		if($v == $wanted_id){
+			push @matches, $k;
+		}
+	}
+
+	croak "ID $wanted_id is defined multiple times: @matches" if( @matches > 1 );
+	croak "ID $wanted_id is not defined." unless (@matches);
+
+	return shift @matches;
 }
 
 sub read_blueprint_library(*){
@@ -139,7 +296,24 @@ sub read_blueprint_library(*){
 	read_unknown($fh);
 	$result->{migrations} = read_migrations($fh);
 	$result->{types} = read_types($fh);
+	
+	# TODO: unknown area
+	read_ignore($fh, 21);
 
+	for(my $b=0; $b<2; ++$b){
+		my $type = read_u8($fh);
+		if( $type == get_type_id($result, "blueprint/blueprint") ){
+			push @{$result->{blueprints}}, read_blueprint($fh, $result);
+		}
+		else {
+			croak "unexpected type: $type";
+		}
+
+		# TODO: unknown area
+		read_ignore($fh, 21);
+#		last;
+	}
+	
 	return $result;
 }
 
