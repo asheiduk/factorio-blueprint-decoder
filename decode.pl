@@ -233,10 +233,8 @@ sub read_blueprint(*$){
 		$result->{"absolute-snapping"} = JSON::true if $absolute_snapping;
 	}
 	
-	my $entity_count = read_u16($fh);
+	my $entity_count = read_u32($fh);
 	printf "entities: %d\n", $entity_count;
-	
-	read_unknown($fh, 0x00, 0x00);
 	my ($last_x, $last_y) = (0, 0);
 	for(my $e=0; $e<$entity_count; ++$e){
 	
