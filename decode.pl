@@ -258,9 +258,10 @@ sub read_blueprint(*$){
 		# maybe helpfull: https://wiki.factorio.com/Data_types
 	 	## maybe helpfull: https://wiki.factorio.com/Types/Direction
 
-#	 	read_ignore($fh, )
+		read_unknown($fh, 0x20, 0x00, 0x06);
 
-		read_unknown($fh, 0x20, 0x00, 0x06, 0x04);
+		my $direction = read_u8($fh);
+
 		read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 
 		printf "    [%d] x: %g, y: %g, '%s'\n", $e, $x, $y, $type_name;
@@ -271,6 +272,10 @@ sub read_blueprint(*$){
 				y => $y
 			}
 		};
+		if($direction != 0x00){
+			$entity->{direction} = $direction;
+		}
+		
 		push @{$result->{entities}}, $entity;
 
 		($last_x, $last_y) = ($x, $y);
