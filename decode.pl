@@ -48,6 +48,9 @@ sub read_bool(*){
 sub read_string(*){
 	my $fh = shift;
 	my $length = read_u8($fh);
+	if($length == 0xff){
+		$length = read_u32($fh);
+	}
 	read $fh, my ($data), $length;
 	return $data;
 }
