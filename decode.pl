@@ -153,15 +153,49 @@ sub read_entity(*$$$){
 		}
 	};
 	
-	read_unknown($fh, 0x20, 0x00, 0x06);
+	read_unknown($fh, 0x20, 0x00);
 
+	my $flags = read_u8($fh);
+	# 0x01 -- override_stack_size
+	# 0x02 -- filter_mode: 0=blacklist, 1(default)=whitelist
+	# 0x04 -- TODO - unknown - default=1(?)
+	# others: TODO - unknown - default=0(?)
+	if( ($flags|0x03) != 0x07 ) {
+		croak sprintf "unexpected flag %02x at position 0x%x", $flags, tell($fh)-1;
+	}
+	
 	# direction
 	my $direction = read_u8($fh);
 	if($direction != 0x00){
 		$entity->{direction} = $direction;
 	}
+
+	if($flags & 0x01){
+		$entity->{override_stack_size} = read_u8($fh);
+	}
+	read_unknown($fh);
+
+	my $filter_count = read_u8($fh);
+	if($filter_count > 0){
+		my @filters;
+		for(my $f=0; $f<$filter_count; ++$f){
+			my $filter_id = read_u16($fh);
+			if($filter_id != 0x00){
+				my $filter_name = get_type_name($library, $filter_id);
+				push @filters, $filter_name;
+			}
+			else {
+				push @filters, undef;
+			}
+		}
+		unless($flags & 0x02){
+			$entity->{filter_mode} = "blacklist";
+		}
+		
+		$entity->{filters} = \@filters;
+	}
 	
-	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 
 	return $entity;
 }
