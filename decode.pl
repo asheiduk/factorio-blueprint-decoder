@@ -5,6 +5,9 @@ use warnings;
 use Data::Dumper;
 use Carp;
 
+# maybe helpfull: https://wiki.factorio.com/Data_types
+# maybe helpfull: https://wiki.factorio.com/Types/Direction
+
 
 ################################################################
 
@@ -116,6 +119,51 @@ sub read_delta_position(*){
 		my $delta_y = $read_delta->();
 		return ($delta_x, $delta_y);
 	}
+}
+
+################################################################
+#
+# entity and entity-parts
+#
+
+# parameter:
+# - $fh
+# - $library
+# - $offset_x
+# - $offset_y
+sub read_entity(*$$$){
+	my $fh = shift;
+	my $library = shift;
+	my $last_x = shift;
+	my $last_y = shift;
+
+	# type
+	my $type_id = read_u16($fh);
+	my $type_name = get_type_name($library, $type_id);
+
+	# position
+	my ($delta_x, $delta_y) = read_delta_position($fh);
+	my ($x, $y) = ($last_x + $delta_x, $last_y + $delta_y);
+
+	my $entity = {
+		name => $type_name,
+		position => {
+			x => $x,
+			y => $y
+		}
+	};
+	
+	read_unknown($fh, 0x20, 0x00, 0x06);
+
+	# direction
+	my $direction = read_u8($fh);
+	if($direction != 0x00){
+		$entity->{direction} = $direction;
+	}
+	
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+
+	return $entity;
 }
 
 ################################################################
@@ -237,50 +285,15 @@ sub read_blueprint(*$){
 	printf "entities: %d\n", $entity_count;
 	my ($last_x, $last_y) = (0, 0);
 	for(my $e=0; $e<$entity_count; ++$e){
-	
-# 00000360        00 00 97 00 ff 7f  80 27 03 00 80 e9 04 00  |  .......'......|
-# 00000370  20 00 06 04 00 00 00 00  00 00 00 00 97 00 00 00  | ...............|
-#
-# hints:
-#
-# 	97: inserter/inserter
-# 	27 03: 807 (dec) x-position of first entity in export is 807.5
-# 	e9 04: 1257(dec) y-position of first entity in export is 1257.5
 
-		# type
-		my $type_id = read_u16($fh);
-		my $type_name = get_type_name($library, $type_id);
+		my $entity = read_entity($fh, $library, $last_x, $last_y);
+		my %position = %{$entity->{position}};
+		my $type_name = $entity->{name};
+		printf "    [%d] x: %g, y: %g, '%s'\n", $e, @position{"x", "y"}, $type_name;
 
-		# position
-		my ($delta_x, $delta_y) = read_delta_position($fh);
-		my ($x, $y) = ($last_x + $delta_x, $last_y + $delta_y);
-
-		# maybe helpfull: https://wiki.factorio.com/Data_types
-	 	## maybe helpfull: https://wiki.factorio.com/Types/Direction
-
-		read_unknown($fh, 0x20, 0x00, 0x06);
-
-		my $direction = read_u8($fh);
-
-		read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
-
-		printf "    [%d] x: %g, y: %g, '%s'\n", $e, $x, $y, $type_name;
-		my $entity = {
-			name => $type_name,
-			position => {
-				x => $x,
-				y => $y
-			}
-		};
-		if($direction != 0x00){
-			$entity->{direction} = $direction;
-		}
-		
 		push @{$result->{entities}}, $entity;
-
-		($last_x, $last_y) = ($x, $y);
-
-		#last;
+		$last_x = $position{x};
+		$last_y = $position{y};
 	}
 
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
