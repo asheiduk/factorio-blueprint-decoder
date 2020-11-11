@@ -2,7 +2,7 @@
 use v5.26.1;
 use strict;
 use warnings;
-use Data::Dumper;
+use JSON;
 use Carp;
 
 # maybe helpfull: https://wiki.factorio.com/Data_types
@@ -484,6 +484,6 @@ my $file = $ARGV[0] || "blueprint-storage.dat";
 printf "file: %s\n", $file;
 open(my $fh, "<", $file) or die;
 my $library = read_blueprint_library($fh);
-print Dumper($library);
+print to_json($library, {pretty => 1, canonical => 1});
 dump_trailing_data($fh);
 close($fh);
