@@ -153,15 +153,33 @@ sub read_entity(*$$$){
 		}
 	};
 	
-	read_unknown($fh, 0x20, 0x00);
+	read_unknown($fh, 0x20);
 
-	my $flags = read_u8($fh);
+	my $flags1 = read_u8($fh);
+	# 0x10	-- has entity id (default=0)
+	if( ($flags1|0x10) != 0x10 ){
+		croak sprintf "unexpected flags1 %02x at postion 0x%x", $flags1, tell($fh)-1;
+	}
+	
+	if($flags1 & 0x10){
+		my @entity_id;
+		my $id_count = read_u8($fh);
+		for(my $i=0; $i<$id_count; ++$i){
+			push @entity_id, read_u32($fh);
+		}
+		$entity->{entity_ids} = \@entity_id;
+		# TODO: in export "entity_"number" but "entity_id" in references.
+		# Also: EACH entity in the export has the number and entities are
+		# numbered 1..N. And there is only one - not an array.
+	}
+
+	my $flags2 = read_u8($fh);
 	# 0x01 -- override_stack_size
 	# 0x02 -- filter_mode: 0=blacklist, 1(default)=whitelist
 	# 0x04 -- TODO - unknown - default=1(?)
 	# others: TODO - unknown - default=0(?)
-	if( ($flags|0x03) != 0x07 ) {
-		croak sprintf "unexpected flag %02x at position 0x%x", $flags, tell($fh)-1;
+	if( ($flags2|0x03) != 0x07 ){
+		croak sprintf "unexpected flags2 %02x at position 0x%x", $flags2, tell($fh)-1;
 	}
 	
 	# direction
@@ -170,11 +188,45 @@ sub read_entity(*$$$){
 		$entity->{direction} = $direction;
 	}
 
-	if($flags & 0x01){
+	# override stack size
+	if($flags2 & 0x01){
 		$entity->{override_stack_size} = read_u8($fh);
 	}
-	read_unknown($fh);
 
+	# circuit network connections
+	my $has_circuit_connections = read_bool($fh);
+	if($has_circuit_connections){
+		my %connections;
+
+		# TODO: how many "colors"? copper?
+		# https://lua-api.factorio.com/latest/defines.html#defines.wire_type
+		for my $color ("red", "green") {
+			my @peers;
+			# TODO: variable length for many connections?
+			my $peer_count = read_u8($fh);
+			for(my $p=0; $p<$peer_count; ++$p){
+				push @peers, read_u32($fh);
+				read_unknown($fh, 0x01, 0xff);
+			}
+			$connections{$color} = \@peers if @peers;
+		}
+		
+		# TODO: The export has another dict with key '"1"' wegded
+		# between "connections" and ("red"/"green"). Maybe circuit_connector_id
+		# https://lua-api.factorio.com/latest/defines.html#defines.circuit_connector_id
+		$entity->{connections} = \%connections;
+
+		# TODO: circuit behaviour
+		read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+		read_unknown($fh, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+		read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x01);
+		read_unknown($fh, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+		read_unknown($fh, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00);
+		read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	}
+
+
+	# item filters
 	my $filter_count = read_u8($fh);
 	if($filter_count > 0){
 		my @filters;
@@ -188,7 +240,7 @@ sub read_entity(*$$$){
 				push @filters, undef;
 			}
 		}
-		unless($flags & 0x02){
+		unless($flags2 & 0x02){
 			$entity->{filter_mode} = "blacklist";
 		}
 		
