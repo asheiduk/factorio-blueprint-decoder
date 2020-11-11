@@ -447,6 +447,7 @@ sub read_blueprint_library(*){
 	# TODO: unknown area
 	read_ignore($fh, 21);
 
+	# TODO: EOF detection XOR find some counter!
 	for(my $b=0; $b<2; ++$b){
 		my $type = read_u8($fh);
 		if( $type == get_type_id($result, "blueprint/blueprint") ){
@@ -455,10 +456,12 @@ sub read_blueprint_library(*){
 		else {
 			croak "unexpected type: $type";
 		}
+		
+		# TODO: support more BPs
+		last;
 
 		# TODO: unknown area
 		read_ignore($fh, 11);
-#		last;
 	}
 	
 	return $result;
