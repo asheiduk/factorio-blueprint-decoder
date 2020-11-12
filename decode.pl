@@ -41,6 +41,12 @@ sub read_u32(*){
 	return unpack "L<", $data;
 }
 
+sub read_s32(*){
+	my $fh = shift;
+	read $fh, my $data, 4 or croak;
+	return unpack "l<", $data;
+}
+
 sub read_bool(*){
 	my $fh = shift;
 	my $b = read_u8($fh);
@@ -198,6 +204,7 @@ sub read_entity(*$$$){
 	if($has_circuit_connections){
 		my %connections;
 
+		# connections
 		# TODO: how many "colors"? copper?
 		# https://lua-api.factorio.com/latest/defines.html#defines.wire_type
 		for my $color ("red", "green") {
@@ -216,10 +223,46 @@ sub read_entity(*$$$){
 		# https://lua-api.factorio.com/latest/defines.html#defines.circuit_connector_id
 		$entity->{connections} = \%connections;
 
-		# TODO: circuit behaviour
-		read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
-		read_unknown($fh, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
-		read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x01);
+		# TODO
+		read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+
+		# circuit condition
+		{
+			my $comparator_index = read_u8($fh); # default: 0x01
+			read_unknown($fh);
+			my @comparators = (">", "<", "=", "≥", "≤", "≠"); 	# same order in drop-down
+			my $comparator = $comparators[$comparator_index];
+			croak "unexpected comparator index 0x%02x", $comparator_index unless $comparator;
+
+			my $first_signal_id = read_u16($fh);
+			my $first_signal_name = get_type_name($library, $first_signal_id) if $first_signal_id;
+			read_unknown($fh);
+			my $second_signal_id = read_u16($fh);
+			my $second_signal_name = get_type_name($library, $second_signal_id) if $second_signal_id;
+			my $constant = read_s32($fh);
+			my $use_constant = read_bool($fh);
+
+			# TODO: where is the "control_behaviour" flag?
+
+			# hide "default" condition
+			if($first_signal_name || $comparator ne "<" || $second_signal_name || $constant){
+				my %circuit_condition;
+				$circuit_condition{first_signal} = $first_signal_name;
+				$circuit_condition{comparator} = $comparator;
+				# The export does not output data if it is hidden in the UI.
+				if($use_constant){
+					$circuit_condition{constant} = $constant;
+				}
+				else {
+					$circuit_condition{second_signal} = $second_signal_name;
+				}
+				$entity->{circuit_condition} = \%circuit_condition;
+			}
+
+			# TODO: wrap condition with "control_behaviour", also hide default
+		}
+
+		# TODO
 		read_unknown($fh, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 		read_unknown($fh, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00);
 		read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
