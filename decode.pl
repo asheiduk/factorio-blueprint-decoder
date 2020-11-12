@@ -228,6 +228,8 @@ sub read_entity(*$$$){
 
 		# circuit condition
 		{
+			my %circuit_condition;
+			
 			my $comparator_index = read_u8($fh); # default: 0x01
 			read_unknown($fh);
 			my @comparators = (">", "<", "=", "≥", "≤", "≠"); 	# same order in drop-down
@@ -242,11 +244,8 @@ sub read_entity(*$$$){
 			my $constant = read_s32($fh);
 			my $use_constant = read_bool($fh);
 
-			# TODO: where is the "control_behaviour" flag?
-
 			# hide "default" condition
 			if($first_signal_name || $comparator ne "<" || $second_signal_name || $constant){
-				my %circuit_condition;
 				$circuit_condition{first_signal} = $first_signal_name;
 				$circuit_condition{comparator} = $comparator;
 				# The export does not output data if it is hidden in the UI.
@@ -256,16 +255,33 @@ sub read_entity(*$$$){
 				else {
 					$circuit_condition{second_signal} = $second_signal_name;
 				}
-				$entity->{circuit_condition} = \%circuit_condition;
 			}
-
-			# TODO: wrap condition with "control_behaviour", also hide default
+			
+			$entity->{control_behavior}{circuit_condition} = \%circuit_condition if %circuit_condition;
 		}
 
 		# TODO
 		read_unknown($fh, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
-		read_unknown($fh, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00);
-		read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+		read_unknown($fh, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00);
+
+		# maybe helpfull: https://lua-api.factorio.com/latest/defines.html#defines.control_behavior
+		# TODO: Wiki inidcates, that this is more complicated!
+		my $mode_of_operation = read_u8($fh);
+		$entity->{control_behavior}{circuit_mode_of_operation} = $mode_of_operation if $mode_of_operation;
+
+		my $read_hand_flag = read_bool($fh);
+		my $read_hand_mode_hold = read_bool($fh);
+		$entity->{control_behavior}{circuit_read_hand_contents} = JSON::true if $read_hand_flag;
+		$entity->{control_behavior}{circuit_hand_read_mode} = 1 if $read_hand_mode_hold;
+
+		my $set_stack_size = read_bool($fh);
+		$entity->{control_behavior}{circuit_set_stack_size} = JSON::true if $set_stack_size;
+		read_unknown($fh);
+		my $stack_size_signal_id = read_u16($fh);
+		if($stack_size_signal_id){
+			my $signal_name = get_type_name($library, $stack_size_signal_id);
+			$entity->{control_behavior}{stack_control_input_signal} = $signal_name;
+		}
 	}
 
 
