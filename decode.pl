@@ -397,13 +397,13 @@ sub read_blueprint(*$){
 	my $library = shift;
 	my $result = {};
 
-	read_unknown($fh);
 	$result->{label} = read_string($fh);
-	printf "blueprint '%s'", $result->{label};
+	printf "blueprint '%s'\n", $result->{label};
 
 	
 	# read_unknown($fh, 0x00, 0x00, 0xff, 0xa4, 0x02, 0x00, 0x00);
-	read_ignore($fh, 7);
+	read_unknown($fh, 0x00, 0x00, 0xff);
+	read_ignore($fh, 4); 	# maybe some offset (with previous 0xff an flexible u8/u32 length?)
 	
 	$result->{version} = read_version($fh);
 	
@@ -506,23 +506,32 @@ sub read_blueprint_library(*){
 	$result->{types} = read_types($fh);
 	
 	# TODO: unknown area
-	read_ignore($fh, 21);
+	read_ignore($fh, 11);
+	my $blueprint_count = read_u16($fh);
+	printf "\nblueprints: %d\n", $blueprint_count;
+	# TODO: unknown area
+	read_unknown($fh, 0x00, 0x00);
 
-	# TODO: EOF detection XOR find some counter!
-	for(my $b=0; $b<2; ++$b){
-		my $type = read_u8($fh);
-		if( $type == get_type_id($result, "blueprint/blueprint") ){
-			push @{$result->{blueprints}}, read_blueprint($fh, $result);
+	for(my $b=0; $b<$blueprint_count; ++$b){
+		my $is_used = read_bool($fh);
+
+		if($is_used){
+			printf "\n[%d] library slot: used\n", $b;
+			# TODO: unknown area
+			read_ignore($fh, 5); 	# perhaps some generation counter?
+			
+			my $type = read_u16($fh);
+			if( $type == get_type_id($result, "blueprint/blueprint") ){
+				push @{$result->{blueprints}}, read_blueprint($fh, $result);
+			}
+			else {
+				croak sprintf "unexpected type: %04x", $type;
+			}
+			
 		}
 		else {
-			croak "unexpected type: $type";
+			printf "\n[%d] library slot: free\n", $b;
 		}
-		
-		# TODO: support more BPs
-		last;
-
-		# TODO: unknown area
-		read_ignore($fh, 11);
 	}
 	
 	return $result;
