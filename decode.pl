@@ -431,10 +431,12 @@ sub read_blueprint(*$){
 	my ($last_x, $last_y) = (0, 0);
 	for(my $e=0; $e<$entity_count; ++$e){
 
+		my $file_offset = tell($fh);
+
 		my $entity = read_entity($fh, $library, $last_x, $last_y);
 		my %position = %{$entity->{position}};
 		my $type_name = $entity->{name};
-		printf "    [%d] x: %g, y: %g, '%s'\n", $e, @position{"x", "y"}, $type_name;
+		printf "    [%d] \@%04x - x: %g, y: %g, '%s'\n", $e, $file_offset, @position{"x", "y"}, $type_name;
 
 		push @{$result->{entities}}, $entity;
 		$last_x = $position{x};
