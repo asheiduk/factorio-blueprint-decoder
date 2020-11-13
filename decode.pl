@@ -335,7 +335,7 @@ sub read_migrations(*){
 	for(my $i=0; $i<$count; ++$i){
 		my $mod_name = read_string($fh);
 		my $migration_file = read_string($fh);
-		printf "[%d] mod '%s', migration '%s'\n", $i, $mod_name, $migration_file;
+		printf "    [%d] mod '%s', migration '%s'\n", $i, $mod_name, $migration_file;
 		push @$result, { mod_name => $mod_name, migration_file => $migration_file }
 	}
 	return $result;
@@ -353,11 +353,11 @@ sub read_types(*){
 		my $entry_count = read_count($fh);
 		
 		if( $cat_name eq "tile" ){		# TODO: strange exception
-			printf "[%d] category '%s' - entries: %d\n", $c, $cat_name, $entry_count;
+			printf "    [%d] category '%s' - entries: %d\n", $c, $cat_name, $entry_count;
 			for(my $e=0; $e<$entry_count; ++$e){
 				my $entry_id = read_u8($fh);
 				my $entry_name = read_string($fh);
-				printf "    [%d] %02x '%s'\n", $e, $entry_id, $entry_name;
+				printf "        [%d] %02x '%s'\n", $e, $entry_id, $entry_name;
 				$result->{$cat_name."/".$entry_name} = $entry_id;
 			}
 
@@ -378,13 +378,13 @@ sub read_types(*){
 			
 		}
 		else {
-			printf "[%d] category '%s' - entries: %d\n", $c, $cat_name, $entry_count;
+			printf "    [%d] category '%s' - entries: %d\n", $c, $cat_name, $entry_count;
 			read_unknown($fh);
 			for(my $e=0; $e<$entry_count; ++$e){
 				# So far only "container/wooden chest" (0x0101) really needs two bytes.
 				my $entry_id = read_u16($fh);
 				my $entry_name = read_string($fh);
-				printf "    [%d] %04x '%s'\n", $e, $entry_id, $entry_name;
+				printf "        [%d] %04x '%s'\n", $e, $entry_id, $entry_name;
 				$result->{$cat_name."/".$entry_name} = $entry_id;
 			}
 		}
@@ -397,8 +397,10 @@ sub read_blueprint(*$){
 	my $library = shift;
 	my $result = {};
 
+	my $file_position = tell($fh);
+	
 	$result->{label} = read_string($fh);
-	printf "blueprint '%s'\n", $result->{label};
+	printf "blueprint '%s' (@%04x)\n", $result->{label}, $file_position;
 
 	
 	# read_unknown($fh, 0x00, 0x00, 0xff, 0xa4, 0x02, 0x00, 0x00);
