@@ -84,7 +84,13 @@ sub read_ignore(*$){
 	my $fh = shift;
 	my $length = shift;
 
+	my $file_position = tell($fh);
 	read $fh, my ($data), $length;
+
+	printf "#\tignored @%04x: %s\n",
+		$file_position, join " ",
+		map{ sprintf "%02x", $_ } unpack "C*", $data;
+	
 	return $data;
 }
 
