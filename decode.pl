@@ -176,77 +176,25 @@ sub read_delta_position(*){
 
 ################################################################
 #
-# entity and entity-parts
+# entity and entity-parts (ep_)
 #
 
-# parameter:
-# - $fh
-# - $library
-# - $offset_x
-# - $offset_y
-sub read_entity(*$$$){
+sub ep_direction(*$$){
 	my $fh = shift;
+	my $entity = shift;
 	my $library = shift;
-	my $last_x = shift;
-	my $last_y = shift;
-
-	# type
-	my $type_id = read_u16($fh);
-	my $type_name = get_type_name($library, $type_id);
-
-	# position
-	my ($delta_x, $delta_y) = read_delta_position($fh);
-	my ($x, $y) = ($last_x + $delta_x, $last_y + $delta_y);
-
-	my $entity = {
-		name => $type_name,
-		position => {
-			x => $x,
-			y => $y
-		}
-	};
 	
-	read_unknown($fh, 0x20);
-
-	my $flags1 = read_u8($fh);
-	# 0x10	-- has entity id (default=0)
-	if( ($flags1|0x10) != 0x10 ){
-		croak sprintf "unexpected flags1 %02x at postion 0x%x", $flags1, tell($fh)-1;
-	}
-	
-	if($flags1 & 0x10){
-		my @entity_id;
-		my $id_count = read_count8($fh);
-		for(my $i=0; $i<$id_count; ++$i){
-			push @entity_id, read_u32($fh);
-		}
-		$entity->{entity_ids} = \@entity_id;
-		# TODO: in export "entity_"number" but "entity_id" in references.
-		# Also: EACH entity in the export has the number and entities are
-		# numbered 1..N. And there is only one - not an array.
-	}
-
-	my $flags2 = read_u8($fh);
-	# 0x01 -- override_stack_size
-	# 0x02 -- filter_mode: 0=blacklist, 1(default)=whitelist
-	# 0x04 -- TODO - unknown - default=1(?)
-	# others: TODO - unknown - default=0(?)
-	if( ($flags2|0x03) != 0x07 ){
-		croak sprintf "unexpected flags2 %02x at position 0x%x", $flags2, tell($fh)-1;
-	}
-	
-	# direction
 	my $direction = read_u8($fh);
 	if($direction != 0x00){
 		$entity->{direction} = $direction;
 	}
+}
 
-	# override stack size
-	if($flags2 & 0x01){
-		$entity->{override_stack_size} = read_u8($fh);
-	}
+sub ep_circuit_connections(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
 
-	# circuit network connections
 	my $has_circuit_connections = read_bool($fh);
 	if($has_circuit_connections){
 		my %connections;
@@ -329,9 +277,13 @@ sub read_entity(*$$$){
 			$entity->{control_behavior}{stack_control_input_signal} = $signal_name;
 		}
 	}
+}
 
-
-	# item filters
+sub ep_filters(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+	
 	my $filter_count = read_count8($fh);
 	if($filter_count > 0){
 		my @filters;
@@ -345,11 +297,81 @@ sub read_entity(*$$$){
 				push @filters, undef;
 			}
 		}
-		unless($flags2 & 0x02){
-			$entity->{filter_mode} = "blacklist";
-		}
-		
 		$entity->{filters} = \@filters;
+	}
+}
+
+# parameter:
+# - $fh
+# - $library
+# - $offset_x
+# - $offset_y
+sub read_entity(*$$$){
+	my $fh = shift;
+	my $library = shift;
+	my $last_x = shift;
+	my $last_y = shift;
+
+	# type
+	my $type_id = read_u16($fh);
+	my $type_name = get_type_name($library, $type_id);
+
+	# position
+	my ($delta_x, $delta_y) = read_delta_position($fh);
+	my ($x, $y) = ($last_x + $delta_x, $last_y + $delta_y);
+
+	my $entity = {
+		name => $type_name,
+		position => {
+			x => $x,
+			y => $y
+		}
+	};
+	
+	read_unknown($fh, 0x20);
+
+	my $flags1 = read_u8($fh);
+	# 0x10	-- has entity id (default=0)
+	if( ($flags1|0x10) != 0x10 ){
+		croak sprintf "unexpected flags1 %02x at postion 0x%x", $flags1, tell($fh)-1;
+	}
+	
+	if($flags1 & 0x10){
+		my @entity_id;
+		my $id_count = read_count8($fh);
+		for(my $i=0; $i<$id_count; ++$i){
+			push @entity_id, read_u32($fh);
+		}
+		$entity->{entity_ids} = \@entity_id;
+		# TODO: in export "entity_"number" but "entity_id" in references.
+		# Also: EACH entity in the export has the number and entities are
+		# numbered 1..N. And there is only one - not an array.
+	}
+
+	my $flags2 = read_u8($fh);
+	# 0x01 -- override_stack_size
+	# 0x02 -- filter_mode: 0=blacklist, 1(default)=whitelist
+	# 0x04 -- TODO - unknown - default=1(?)
+	# others: TODO - unknown - default=0(?)
+	if( ($flags2|0x03) != 0x07 ){
+		croak sprintf "unexpected flags2 %02x at position 0x%x", $flags2, tell($fh)-1;
+	}
+	
+	# direction
+	ep_direction($fh, $entity, $library);
+
+	# override stack size
+	if($flags2 & 0x01){
+		$entity->{override_stack_size} = read_u8($fh);
+	}
+
+	# circuit network connections
+	ep_circuit_connections($fh, $entity, $library);
+
+	# item filters
+	ep_filters($fh, $entity, $library);
+	unless($flags2 & 0x02){
+		$entity->{filter_mode} = "blacklist";
 	}
 	
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
