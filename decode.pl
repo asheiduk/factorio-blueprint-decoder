@@ -96,9 +96,20 @@ sub read_ignore(*$){
 	return $data;
 }
 
-sub read_count(*){
+sub read_count8(*){
+# TODO: savety check for 0xff
 	my $fh = shift;
 	return read_u8($fh);
+}
+
+sub read_count16(*){
+	my $fh = shift;
+	return read_u16($fh);
+}
+
+sub read_count32(*){
+	my $fh = shift;
+	return read_u32($fh);
 }
 
 ################################################################
@@ -120,7 +131,7 @@ sub read_migrations(*){
 	my $fh = shift;
 	my $result = [];
 	
-	my $count = read_count($fh);
+	my $count = read_count8($fh);
 	printf "migrations: %d\n", $count;
 	for(my $i=0; $i<$count; ++$i){
 		my $mod_name = read_string($fh);
@@ -205,7 +216,7 @@ sub read_entity(*$$$){
 	
 	if($flags1 & 0x10){
 		my @entity_id;
-		my $id_count = read_u8($fh);
+		my $id_count = read_count8($fh);
 		for(my $i=0; $i<$id_count; ++$i){
 			push @entity_id, read_u32($fh);
 		}
@@ -246,7 +257,7 @@ sub read_entity(*$$$){
 		for my $color ("red", "green") {
 			my @peers;
 			# TODO: variable length for many connections?
-			my $peer_count = read_u8($fh);
+			my $peer_count = read_count8($fh);
 			for(my $p=0; $p<$peer_count; ++$p){
 				push @peers, read_u32($fh);
 				read_unknown($fh, 0x01, 0xff);
@@ -321,7 +332,7 @@ sub read_entity(*$$$){
 
 
 	# item filters
-	my $filter_count = read_u8($fh);
+	my $filter_count = read_count8($fh);
 	if($filter_count > 0){
 		my @filters;
 		for(my $f=0; $f<$filter_count; ++$f){
@@ -384,7 +395,7 @@ sub read_blueprint(*$){
 		$result->{"absolute-snapping"} = JSON::true if $absolute_snapping;
 	}
 	
-	my $entity_count = read_u32($fh);
+	my $entity_count = read_count32($fh);
 	printf "entities: %d\n", $entity_count;
 	my ($last_x, $last_y) = (0, 0);
 	for(my $e=0; $e<$entity_count; ++$e){
@@ -403,7 +414,7 @@ sub read_blueprint(*$){
 
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 
-	my $icon_count = read_count($fh);
+	my $icon_count = read_count8($fh);
 	if($icon_count>0){
 		printf "icons: %s\n", $icon_count;
 		my @icons;
@@ -435,12 +446,12 @@ sub read_types(*){
 	my $fh = shift;
 	my $result = {};
 	
-	my $cat_count = read_u16($fh);
+	my $cat_count = read_count16($fh);
 	printf "categories: %d\n", $cat_count;
 	for(my $c=0; $c<$cat_count; ++$c){
 	
 		my $cat_name = read_string($fh);
-		my $entry_count = read_count($fh);
+		my $entry_count = read_count8($fh);
 		
 		if( $cat_name eq "tile" ){		# TODO: strange exception
 			printf "    [%d] category '%s' - entries: %d\n", $c, $cat_name, $entry_count;
@@ -503,7 +514,7 @@ sub read_blueprint_library(*){
 	$result->{types} = read_types($fh);
 	
 	read_ignore($fh, 11);
-	my $blueprint_count = read_u16($fh);
+	my $blueprint_count = read_count16($fh);
 	printf "\nblueprints: %d\n", $blueprint_count;
 	read_unknown($fh, 0x00, 0x00);
 
