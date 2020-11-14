@@ -298,7 +298,6 @@ sub read_entity(*$$$){
 			$entity->{control_behavior}{circuit_condition} = \%circuit_condition if %circuit_condition;
 		}
 
-		# TODO
 		read_unknown($fh, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 		read_unknown($fh, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00);
 
@@ -363,8 +362,6 @@ sub read_blueprint(*$){
 	$result->{label} = read_string($fh);
 	printf "blueprint '%s' (@%04x)\n", $result->{label}, $file_position;
 
-	
-	# read_unknown($fh, 0x00, 0x00, 0xff, 0xa4, 0x02, 0x00, 0x00);
 	read_unknown($fh, 0x00, 0x00, 0xff);
 	read_ignore($fh, 4); 	# maybe some offset (with previous 0xff an flexible u8/u32 length?)
 	
@@ -507,11 +504,9 @@ sub read_blueprint_library(*){
 	$result->{migrations} = read_migrations($fh);
 	$result->{types} = read_types($fh);
 	
-	# TODO: unknown area
 	read_ignore($fh, 11);
 	my $blueprint_count = read_u16($fh);
 	printf "\nblueprints: %d\n", $blueprint_count;
-	# TODO: unknown area
 	read_unknown($fh, 0x00, 0x00);
 
 	for(my $b=0; $b<$blueprint_count; ++$b){
@@ -519,7 +514,6 @@ sub read_blueprint_library(*){
 
 		if($is_used){
 			printf "\n[%d] library slot: used\n", $b;
-			# TODO: unknown area
 			read_ignore($fh, 5); 	# perhaps some generation counter?
 			
 			my $type = read_u16($fh);
