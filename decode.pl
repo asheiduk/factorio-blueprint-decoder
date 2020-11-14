@@ -108,14 +108,12 @@ sub read_count(*){
 # maybe helpfull: https://wiki.factorio.com/Version_string_format
 sub read_version(*){
 	my $fh = shift;
-	my ($main, $major, $minor, $developer) = (read_u16($fh), read_u16($fh), read_u16($fh),read_u16($fh));
-	printf "version: %d.%d.%d.%d\n", $main, $major, $minor, $developer;
-	return {
-		main => $main,
-		major => $major,
-		minor => $minor,
-		developer => $developer
-	};
+	my @result;
+	for(1..4){
+		push @result, read_u16($fh);
+	}
+	printf "version: %s\n", join ".", @result;
+	return \@result;
 }
 
 sub read_migrations(*){
