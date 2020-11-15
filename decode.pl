@@ -483,7 +483,8 @@ sub ep_filters(*$$){
 	my $fh = shift;
 	my $entity = shift;
 	my $library = shift;
-	
+
+	# Even without filters the count is > 0 for filter-inserters.
 	my $filter_count = read_count8($fh);
 	if($filter_count > 0){
 		my @filters;
@@ -498,6 +499,8 @@ sub ep_filters(*$$){
 			}
 		}
 		$entity->{filters} = \@filters;
+		# TODO: The export file suppresses an empty list (or a list with only undef entries).
+		# TODO: The export also uses a map, not an array, hence the items have an additional index field.
 	}
 }
 
