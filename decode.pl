@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-use v5.26.1;
+use v5.26;
 use strict;
 use warnings;
 use JSON;
@@ -8,6 +8,175 @@ use Carp;
 # maybe helpfull: https://wiki.factorio.com/Data_types
 # maybe helpfull: https://wiki.factorio.com/Types/Direction
 
+
+################################################################
+################################################################
+
+package Index;
+use v5.26;
+use strict;
+use warnings;
+use Carp;
+
+# value is the prototype-class (except "entity"). In BP exports the wording is just "virtual".
+use constant {
+	ITEM => "item",
+	FLUID => "fluid",
+	VSIGNAL => "virtual-signal",
+	TILE => "tile",
+	ENTITY => "entity"
+};
+
+my %_kind_mapping = (
+	# item (0)
+	ammo => ITEM,
+	armor => ITEM,
+	blueprint => ITEM,
+	"blueprint-book" => ITEM,
+	capsule => ITEM,
+	"deconstruction-item" => ITEM,
+	gun => ITEM,
+	item => ITEM,
+	"item-with-entity-data" => ITEM,
+	module => ITEM,
+	"spidertron-remote" => ITEM,
+	"rail-planner" => ITEM,
+	"repair-tool" => ITEM,
+	tool => ITEM,
+	"upgrade-item" => ITEM,
+	# fluid (1)
+	fluid => FLUID,
+	# virtual-signal (2)
+	"virtual-signal" => VSIGNAL,
+	# entity
+	accumulator => ENTITY,
+	"arithmetic-combinator" => ENTITY,
+	"artillery-wagon" => ENTITY,
+	"assembling-machine" => ENTITY,
+	beacon => ENTITY,
+    boiler => ENTITY,
+    "cargo-wagon" => ENTITY,
+	"constant-combinator" => ENTITY,
+    container => ENTITY,
+    "curved-rail" => ENTITY,
+    "decider-combinator" => ENTITY,
+    "electric-pole" => ENTITY,
+    "fluid-wagon" => ENTITY,
+    furnace => ENTITY,
+    generator => ENTITY,
+	"heat-pipe" => ENTITY,
+	"infinity-container" => ENTITY,
+    inserter => ENTITY,
+    lab => ENTITY,
+    lamp => ENTITY,
+    locomotive => ENTITY,
+    "logistic-container" => ENTITY,
+	pipe => ENTITY,
+	"pipe-to-ground" => ENTITY,
+	"power-switch" => ENTITY,
+	"programmable-speaker" => ENTITY,
+	pump => ENTITY,
+	"rail-chain-signal" => ENTITY,
+	"rail-signal" => ENTITY,
+	reactor => ENTITY,
+	roboport => ENTITY,
+	"solar-panel" => ENTITY,
+	splitter => ENTITY,
+	"storage-tank" => ENTITY,
+	"straight-rail" => ENTITY,
+	"train-stop" => ENTITY,
+	"transport-belt" => ENTITY,
+	"underground-belt" => ENTITY,
+	# tile
+	tile => TILE,
+);
+
+sub new {
+	my $class = shift;
+	
+	return bless {
+		ITEM() => {},
+		FLUID() => {},
+		VSIGNAL() => {},
+		TILE() => {},
+		ENTITY() => {}
+	}, $class
+}
+
+sub add($$$$$) {
+	my $self = shift or croak;
+	my $id = shift or croak;
+	my $class = shift or croak;
+	my $name = shift or croak;
+
+	my $kind = $self->_map_class_to_kind($class);
+	my $entry = $self->entry($kind, $class, $id);
+	croak "ID $id is already used for $entry->{class}/$entry->{name}" if $entry;
+
+	$self->{$kind}{$id} = {
+		class => $class,
+		name => $name,
+		id => $id
+	};
+}
+
+sub entry($$$$){
+	my $self = shift or croak;
+	my $kind = shift or croak;
+	my $id = shift or croak;
+
+	# avoid autovivification of $self->{$kind}{$id};
+	my $entries = $self->{$kind};
+	return undef unless $entries;
+	return $entries->{$id};
+}
+
+sub name($$$) {
+	my $self = shift or croak;
+	my $kind = shift or croak;
+	my $id = shift or croak;
+
+	# avoid autovivification of $self->{$kind}{$id}{name};
+	my $entry = $self->entry($kind, $id);
+	return undef unless $entry;
+	return $entry->{name};
+}
+
+sub id($$$$){
+	my $self = shift or croak;
+	my $kind = shift or croak;
+	my $class = shift or croak;
+	my $name = shift or croak;
+
+	for my $v (values %{$self->{$kind}}){
+		return $v->{id} if $v->{class} eq $class && $v->{name} eq $name;
+	}
+	return undef;
+}
+
+sub _map_class_to_kind($$){
+	my $self = shift or croak;
+	my $class = shift or croak;
+
+	my $kind = $_kind_mapping{$class};
+	croak "kind of class '$class' is unknown" unless $kind;
+	return $kind;
+}
+
+sub TO_JSON($){
+	my $self = shift or croak;
+
+	my %copy = ( %$self );
+	for(keys %copy){
+		delete $copy{$_} unless %{$copy{$_}};
+	}
+	return \%copy;
+}
+
+################################################################
+################################################################
+
+package main;
 
 ################################################################
 #
@@ -114,7 +283,7 @@ sub read_count32(*){
 
 ################################################################
 #
-# mid level parsing
+# mid level parsing -- without Index
 
 # maybe helpfull: https://wiki.factorio.com/Version_string_format
 sub read_version(*){
@@ -176,6 +345,31 @@ sub read_delta_position(*){
 
 ################################################################
 #
+# mid level parsing -- with Index
+
+
+sub read_type_and_name(*$){
+	my $fh = shift;
+	my $library = shift;
+	
+	my $kind_id = read_u8($fh);
+	my $id = read_u16($fh);
+	return undef unless $id;
+	
+	my $kind = (Index::ITEM, Index::FLUID, Index::VSIGNAL)[$kind_id];
+	croak "unknown prototype kind $kind_id" unless $kind;
+
+	my $type = ("item", "fluid", "virtual")[$kind_id];
+	my $name = get_name($library, $kind, $id);
+
+	return {
+		type => $type,
+		name => $name
+	};
+}
+
+################################################################
+#
 # entity and entity-parts (ep_)
 #
 
@@ -226,29 +420,26 @@ sub ep_circuit_connections(*$$){
 			my %circuit_condition;
 			
 			my $comparator_index = read_u8($fh); # default: 0x01
-			read_unknown($fh);
 			my @comparators = (">", "<", "=", "≥", "≤", "≠"); 	# same order in drop-down
 			my $comparator = $comparators[$comparator_index];
 			croak "unexpected comparator index 0x%02x", $comparator_index unless $comparator;
 
-			my $first_signal_id = read_u16($fh);
-			my $first_signal_name = get_type_name($library, $first_signal_id) if $first_signal_id;
-			read_unknown($fh);
-			my $second_signal_id = read_u16($fh);
-			my $second_signal_name = get_type_name($library, $second_signal_id) if $second_signal_id;
+			my $first_signal = read_type_and_name($fh, $library);
+			my $second_signal = read_type_and_name($fh, $library);
+
 			my $constant = read_s32($fh);
 			my $use_constant = read_bool($fh);
 
 			# hide "default" condition
-			if($first_signal_name || $comparator ne "<" || $second_signal_name || $constant){
-				$circuit_condition{first_signal} = $first_signal_name;
+			if($first_signal || $comparator ne "<" || $second_signal || $constant){
+				$circuit_condition{first_signal} = $first_signal;
 				$circuit_condition{comparator} = $comparator;
 				# The export does not output data if it is hidden in the UI.
 				if($use_constant){
 					$circuit_condition{constant} = $constant;
 				}
 				else {
-					$circuit_condition{second_signal} = $second_signal_name;
+					$circuit_condition{second_signal} = $second_signal;
 				}
 			}
 			
@@ -270,11 +461,9 @@ sub ep_circuit_connections(*$$){
 
 		my $set_stack_size = read_bool($fh);
 		$entity->{control_behavior}{circuit_set_stack_size} = JSON::true if $set_stack_size;
-		read_unknown($fh);
-		my $stack_size_signal_id = read_u16($fh);
-		if($stack_size_signal_id){
-			my $signal_name = get_type_name($library, $stack_size_signal_id);
-			$entity->{control_behavior}{stack_control_input_signal} = $signal_name;
+		my $stack_size_signal = read_type_and_name($fh, $library);
+		if($stack_size_signal){
+			$entity->{control_behavior}{stack_control_input_signal} = $stack_size_signal;
 		}
 	}
 }
@@ -290,7 +479,7 @@ sub ep_filters(*$$){
 		for(my $f=0; $f<$filter_count; ++$f){
 			my $filter_id = read_u16($fh);
 			if($filter_id != 0x00){
-				my $filter_name = get_type_name($library, $filter_id);
+				my $filter_name = get_name($library, Index::ITEM, $filter_id);
 				push @filters, $filter_name;
 			}
 			else {
@@ -318,7 +507,7 @@ sub read_entity(*$$$$){
 		
 	# type
 	my $type_id = read_u16($fh);
-	my $type_name = get_type_name($library, $type_id);
+	my $type_name = get_name($library, Index::ENTITY, $type_id);
 
 	# position
 	my ($delta_x, $delta_y) = read_delta_position($fh);
@@ -445,17 +634,14 @@ sub read_blueprint(*$){
 		printf "icons: %s\n", $icon_count;
 		my @icons;
 		for(my $i=0; $i<$icon_count; ++$i){
-			# TODO: The export format is more complex and mentions "type:item".
-			read_unknown($fh);
-			my $type_id = read_u16($fh);
-			if($type_id == 0x00){
-				printf "    [%d] (none)\n", $i;
-				push @icons, undef;
+			my $icon = read_type_and_name($fh, $library);
+			if($icon){
+				printf "    [%d] '%s' / '%s'\n", $i, $icon->{type}, $icon->{name};
+				push @icons, $icon;
 			}
 			else {
-				my $type_name = get_type_name($library, $type_id);
-				printf "    [%d] '%s' (%04x)\n", $i, $type_name, $type_id;
-				push @icons, $type_name;
+				printf "    [%d] (none)\n", $i;
+				push @icons, undef;
 			}
 		}
 		$result->{icons} = \@icons;
@@ -468,66 +654,62 @@ sub read_blueprint(*$){
 #
 # blueprint library
 
-sub read_types(*){
+sub read_prototype_ids(*){
 	my $fh = shift;
-	my $result = {};
+	my $result = Index->new;
 	
-	my $cat_count = read_count16($fh);
-	printf "categories: %d\n", $cat_count;
-	for(my $c=0; $c<$cat_count; ++$c){
+	my $class_count = read_count16($fh);
+	printf "used prototype classes: %d\n", $class_count;
+	for(my $c=0; $c<$class_count; ++$c){
 	
-		my $cat_name = read_string($fh);
-		my $entry_count = read_count8($fh);
+		my $class_name = read_string($fh);
+		my $proto_count = read_count8($fh);
 		
-		if( $cat_name eq "tile" ){		# TODO: strange exception
-			printf "    [%d] category '%s' - entries: %d\n", $c, $cat_name, $entry_count;
-			for(my $e=0; $e<$entry_count; ++$e){
-				my $entry_id = read_u8($fh);
-				my $entry_name = read_string($fh);
-				printf "        [%d] %02x '%s'\n", $e, $entry_id, $entry_name;
-				$result->{$cat_name."/".$entry_name} = $entry_id;
+		if( $class_name eq "tile" ){		# TODO: strange exception
+			printf "    [%d] class '%s' - entries: %d\n", $c, $class_name, $proto_count;
+			for(my $p=0; $p<$proto_count; ++$p){
+				my $proto_id = read_u8($fh);
+				my $proto_name = read_string($fh);
+				printf "        [%d] %02x '%s'\n", $p, $proto_id, $proto_name;
+				$result->add($proto_id, $class_name, $proto_name);
+#				$result->{$kind_name."/".$proto_name} = $proto_id;
 			}
 		}
 		else {
-			printf "    [%d] category '%s' - entries: %d\n", $c, $cat_name, $entry_count;
-			read_unknown($fh);
-			for(my $e=0; $e<$entry_count; ++$e){
-				# So far only "container/wooden chest" (0x0101) really needs two bytes.
-				my $entry_id = read_u16($fh);
-				my $entry_name = read_string($fh);
-				printf "        [%d] %04x '%s'\n", $e, $entry_id, $entry_name;
-				$result->{$cat_name."/".$entry_name} = $entry_id;
+			printf "    [%d] class '%s' - entries: %d\n", $c, $class_name, $proto_count;
+			read_unknown($fh); 		# TODO: another strange exception: data between count and list
+			for(my $p=0; $p<$proto_count; ++$p){
+				my $proto_id = read_u16($fh);
+				my $proto_name = read_string($fh);
+				printf "        [%d] %04x '%s'\n", $p, $proto_id, $proto_name;
+				$result->add($proto_id, $class_name, $proto_name);
+#				$result->{$cat_name."/".$entry_name} = $entry_id;
 			}
 		}
 	}
 	return $result;
 }
 
-sub get_type_id($$){
-	my $library = shift;
-	my $key = shift;
+# TODO: move to index XOR inline?
+sub get_item_id($$$){
+	my $library = shift or croak;
+	my $class = shift or croak;
+	my $name = shift or croak;
 
-	return $library->{types}{$key};
+	my $result = $library->{prototypes}->id(Index::ITEM, $class, $name);
+	croak sprintf "##### unknown item name: %s, %s", $class, $name unless $result;
+	return $result;
 }
 
-sub get_type_name($$){
-	my $library = shift;
-	my $wanted_id = shift;
+# TODO: move to index XOR inline?
+sub get_name($$$){
+	my $library = shift or croak;
+	my $kind = shift or croak;
+	my $id = shift or croak;
 
-	my $types = $library->{types};
-
-	# TODO: this is expensive and excessive. Works for now.
-	my @matches;
-	while(my ($k, $v) = each %$types){
-		if($v == $wanted_id){
-			push @matches, $k;
-		}
-	}
-
-	croak "ID $wanted_id is defined multiple times: @matches" if( @matches > 1 );
-	croak "ID $wanted_id is not defined." unless (@matches);
-
-	return shift @matches;
+	my $result = $library->{prototypes}->name($kind, $id);
+	croak sprintf "##### unknown thing: kind: %s, id: %04x", $kind, $id unless $result;
+	return $result;
 }
 
 sub read_blueprint_library(*){
@@ -537,22 +719,22 @@ sub read_blueprint_library(*){
 	$result->{version} = read_version($fh);
 	read_unknown($fh);
 	$result->{migrations} = read_migrations($fh);
-	$result->{types} = read_types($fh);
+	$result->{prototypes} = read_prototype_ids($fh);
 	
 	read_ignore($fh, 11);
 	my $blueprint_count = read_count16($fh);
 	printf "\nblueprints: %d\n", $blueprint_count;
 	read_unknown($fh, 0x00, 0x00);
 
+	my $blueprint_id = get_item_id($result, "blueprint", "blueprint");
 	for(my $b=0; $b<$blueprint_count; ++$b){
 		my $is_used = read_bool($fh);
 
 		if($is_used){
 			printf "\n[%d] library slot: used\n", $b;
 			read_ignore($fh, 5); 	# perhaps some generation counter?
-			
 			my $type = read_u16($fh);
-			if( $type == get_type_id($result, "blueprint/blueprint") ){
+			if($type == $blueprint_id){
 				push @{$result->{blueprints}}, read_blueprint($fh, $result);
 			}
 			else {
@@ -592,6 +774,6 @@ my $file = $ARGV[0] || "blueprint-storage.dat";
 printf "file: %s\n", $file;
 open(my $fh, "<", $file) or die;
 my $library = read_blueprint_library($fh);
-print to_json($library, {pretty => 1, canonical => 1});
+print to_json($library, {pretty => 1, convert_blessed => 1, canonical => 1});
 dump_trailing_data($fh);
 close($fh);
