@@ -304,14 +304,18 @@ sub ep_filters(*$$){
 # parameter:
 # - $fh
 # - $library
+# - entity_index
 # - $offset_x
 # - $offset_y
-sub read_entity(*$$$){
+sub read_entity(*$$$$){
 	my $fh = shift;
 	my $library = shift;
+	my $entity_index = shift;
 	my $last_x = shift;
 	my $last_y = shift;
 
+	my $file_offset = tell($fh);
+		
 	# type
 	my $type_id = read_u16($fh);
 	my $type_name = get_type_name($library, $type_id);
@@ -320,6 +324,7 @@ sub read_entity(*$$$){
 	my ($delta_x, $delta_y) = read_delta_position($fh);
 	my ($x, $y) = ($last_x + $delta_x, $last_y + $delta_y);
 
+	printf "    [%d] \@%04x - x: %g, y: %g, '%s'\n", $entity_index, $file_offset, $x, $y, $type_name;
 	my $entity = {
 		name => $type_name,
 		position => {
@@ -346,6 +351,7 @@ sub read_entity(*$$$){
 			push @entity_ids, read_u32($fh);
 		}
 		$entity->{entity_ids} = \@entity_ids;
+		printf "\tentity-ids: %s\n", join(", ", @entity_ids);
 		# TODO: in export "entity_"number" but "entity_id" in references.
 		# Also: EACH entity in the export has the number and entities are
 		# numbered 1..N. And there is only one - not an array.
@@ -424,13 +430,8 @@ sub read_blueprint(*$){
 	printf "entities: %d\n", $entity_count;
 	my ($last_x, $last_y) = (0, 0);
 	for(my $e=0; $e<$entity_count; ++$e){
-
-		my $file_offset = tell($fh);
-
-		my $entity = read_entity($fh, $library, $last_x, $last_y);
+		my $entity = read_entity($fh, $library, $e, $last_x, $last_y);
 		my %position = %{$entity->{position}};
-		my $type_name = $entity->{name};
-		printf "    [%d] \@%04x - x: %g, y: %g, '%s'\n", $e, $file_offset, @position{"x", "y"}, $type_name;
 
 		push @{$result->{entities}}, $entity;
 		$last_x = $position{x};
