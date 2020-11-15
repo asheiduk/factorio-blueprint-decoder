@@ -335,14 +335,17 @@ sub read_entity(*$$$){
 	if( ($flags1|0x10) != 0x10 ){
 		croak sprintf "unexpected flags1 %02x at postion 0x%x", $flags1, tell($fh)-1;
 	}
-	
+
+	# entity ids
 	if($flags1 & 0x10){
-		my @entity_id;
+		my @entity_ids;
+		# TODO: perhaps the "count" is not a count a kind of type like the type
+		# before signal ids in circuit conditions? But 0x01 would be "fluid".
 		my $id_count = read_count8($fh);
 		for(my $i=0; $i<$id_count; ++$i){
-			push @entity_id, read_u32($fh);
+			push @entity_ids, read_u32($fh);
 		}
-		$entity->{entity_ids} = \@entity_id;
+		$entity->{entity_ids} = \@entity_ids;
 		# TODO: in export "entity_"number" but "entity_id" in references.
 		# Also: EACH entity in the export has the number and entities are
 		# numbered 1..N. And there is only one - not an array.
