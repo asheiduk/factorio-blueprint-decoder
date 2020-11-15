@@ -734,8 +734,13 @@ sub read_blueprint_library(*){
 	read_unknown($fh);
 	$result->{migrations} = read_migrations($fh);
 	$result->{prototypes} = read_prototype_ids($fh);
+
+	read_unknown($fh, 0x00, 0x00);
+	read_ignore($fh, 1); # a small generation/save/copy counter?
+	read_unknown($fh, 0x00, 0x00, 0x00);
+	read_ignore($fh, 4); # u32 unix timestamp
+	read_unknown($fh, 0x01);
 	
-	read_ignore($fh, 11);
 	my $blueprint_count = read_count16($fh);
 	printf "\nblueprints: %d\n", $blueprint_count;
 	read_unknown($fh, 0x00, 0x00);
