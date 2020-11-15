@@ -410,14 +410,15 @@ sub ep_circuit_connections(*$$){
 		# TODO: The export has another dict with key '"1"' wegded
 		# between "connections" and ("red"/"green"). Maybe circuit_connector_id
 		# https://lua-api.factorio.com/latest/defines.html#defines.circuit_connector_id
-		$entity->{connections} = \%connections;
+		$entity->{connections} = \%connections if %connections;
 
 		# TODO
 		read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 
-		# circuit condition
-		{
-			my %circuit_condition;
+		# circuit condition & logistic condition
+		my $parser = sub {
+			my $condition_name = shift;
+			my %condition;
 			
 			my $comparator_index = read_u8($fh); # default: 0x01
 			my @comparators = (">", "<", "=", "≥", "≤", "≠"); 	# same order in drop-down
@@ -432,22 +433,32 @@ sub ep_circuit_connections(*$$){
 
 			# hide "default" condition
 			if($first_signal || $comparator ne "<" || $second_signal || $constant){
-				$circuit_condition{first_signal} = $first_signal;
-				$circuit_condition{comparator} = $comparator;
+				$condition{first_signal} = $first_signal;
+				$condition{comparator} = $comparator;
 				# The export does not output data if it is hidden in the UI.
 				if($use_constant){
-					$circuit_condition{constant} = $constant;
+					$condition{constant} = $constant;
 				}
 				else {
-					$circuit_condition{second_signal} = $second_signal;
+					$condition{second_signal} = $second_signal;
 				}
 			}
 			
-			$entity->{control_behavior}{circuit_condition} = \%circuit_condition if %circuit_condition;
-		}
+			$entity->{control_behavior}{$condition_name} = \%condition if %condition;
+			
+		};
 
-		read_unknown($fh, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
-		read_unknown($fh, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00);
+		$parser->("circuit_condition");
+		$parser->("logistic_condition");
+		my $logistic_connected = read_bool($fh);
+		if($logistic_connected){
+			$entity->{control_behavior}{connect_to_logistic_network} = JSON::true;
+		}
+		else {
+			delete $entity->{control_behavior}{logistic_condition};
+		}
+		
+		read_unknown($fh, 0x00, 0x00);
 
 		# maybe helpfull: https://lua-api.factorio.com/latest/defines.html#defines.control_behavior
 		# TODO: Wiki inidcates, that this is more complicated!
