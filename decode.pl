@@ -373,6 +373,33 @@ sub read_type_and_name(*$){
 # entity and entity-parts (ep_)
 #
 
+sub ep_entity_ids(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+	
+	my $flags1 = read_u8($fh);
+	# 0x10	-- has entity id (default=0)
+	if( ($flags1|0x10) != 0x10 ){
+		croak sprintf "unexpected flags1 %02x at postion 0x%x", $flags1, tell($fh)-1;
+	}
+	
+	if($flags1 & 0x10){
+		my @entity_ids;
+		# TODO: perhaps the "count" is not a count a kind of type like the type
+		# before signal ids in circuit conditions? But 0x01 would be "fluid".
+		my $id_count = read_count8($fh);
+		for(my $i=0; $i<$id_count; ++$i){
+			push @entity_ids, read_u32($fh);
+		}
+		$entity->{entity_ids} = \@entity_ids;
+		printf "\tentity-ids: %s\n", join(", ", @entity_ids);
+		# TODO: in export "entity_"number" but "entity_id" in references.
+		# Also: EACH entity in the export has the number and entities are
+		# numbered 1..N. And there is only one - not an array.
+	}
+}
+
 sub ep_direction(*$$){
 	my $fh = shift;
 	my $entity = shift;
@@ -538,28 +565,9 @@ sub read_entity(*$$$$){
 	
 	read_unknown($fh, 0x20);
 
-	my $flags1 = read_u8($fh);
-	# 0x10	-- has entity id (default=0)
-	if( ($flags1|0x10) != 0x10 ){
-		croak sprintf "unexpected flags1 %02x at postion 0x%x", $flags1, tell($fh)-1;
-	}
-
 	# entity ids
-	if($flags1 & 0x10){
-		my @entity_ids;
-		# TODO: perhaps the "count" is not a count a kind of type like the type
-		# before signal ids in circuit conditions? But 0x01 would be "fluid".
-		my $id_count = read_count8($fh);
-		for(my $i=0; $i<$id_count; ++$i){
-			push @entity_ids, read_u32($fh);
-		}
-		$entity->{entity_ids} = \@entity_ids;
-		printf "\tentity-ids: %s\n", join(", ", @entity_ids);
-		# TODO: in export "entity_"number" but "entity_id" in references.
-		# Also: EACH entity in the export has the number and entities are
-		# numbered 1..N. And there is only one - not an array.
-	}
-
+	ep_entity_ids($fh, $entity, $library);
+	
 	my $flags2 = read_u8($fh);
 	# 0x01 -- override_stack_size
 	# 0x02 -- filter_mode: 0=blacklist, 1(default)=whitelist
