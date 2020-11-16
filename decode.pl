@@ -585,8 +585,50 @@ sub read_entity_inserter_details(*$$){
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
 
+sub read_entity_constant_combinator_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+	
+	# entity ids
+	ep_entity_ids($fh, $entity, $library);
+
+	# circuit connection
+	ep_circuit_connections($fh, $entity, $library);
+	
+	my $filter_count = read_count32($fh);
+	if($filter_count > 0){
+		my @filters;
+		for(my $f=0; $f<$filter_count; ++$f){
+			my $signal = read_type_and_name($fh, $library);
+			my $count = read_s32($fh);
+			if($signal){
+				push @filters, {
+					signal => $signal,
+					count => $count
+				};
+			}
+			else {
+				push @filters, undef;
+			}
+		}
+		# Export: Why "filter"? These are not filters.
+		# TODO: suppress empty signal list.
+		$entity->{control_behavior}{filters} = \@filters;
+	}
+
+	my $is_on = read_bool($fh);
+	unless($is_on){
+		$entity->{control_behavior}{is_on} = JSON::false;
+	}
+	ep_direction($fh, $entity, $library);
+	
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
 my %entity_details_handlers = (
 	"inserter" => \&read_entity_inserter_details,
+	"constant-combinator" => \&read_entity_constant_combinator_details,
 );
 
 # parameter:
