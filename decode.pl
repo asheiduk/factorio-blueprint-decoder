@@ -566,6 +566,10 @@ sub read_entity_inserter_details(*$$){
 	}
 }
 
+my %entity_details_handlers = (
+	"inserter" => \&read_entity_inserter_details,
+);
+
 # parameter:
 # - $fh
 # - $library
@@ -583,13 +587,15 @@ sub read_entity(*$$$$){
 		
 	# type
 	my $type_id = read_u16($fh);
-	my $type_name = get_name($library, Index::ENTITY, $type_id);
-
+	my $entry = get_entry($library, Index::ENTITY, $type_id);
+	my $type_name = $entry->{name};
+	my $type_class = $entry->{class};
+	
 	# position
 	my ($delta_x, $delta_y) = read_delta_position($fh);
 	my ($x, $y) = ($last_x + $delta_x, $last_y + $delta_y);
 
-	printf "    [%d] \@%04x - x: %g, y: %g, '%s'\n", $entity_index, $file_offset, $x, $y, $type_name;
+	printf "    [%d] \@%04x - x: %g, y: %g, '%s/%s'\n", $entity_index, $file_offset, $x, $y, $type_class, $type_name;
 	my $entity = {
 		name => $type_name,
 		position => {
@@ -599,8 +605,14 @@ sub read_entity(*$$$$){
 	};
 	
 	read_unknown($fh, 0x20);
-	
-	read_entity_inserter_details($fh, $entity, $library);
+
+	my $handler = $entity_details_handlers{$type_class};
+	if($handler){
+		$handler->($fh, $entity, $library);
+	}
+	else {
+		croak "unexpected type-class '$type_class'";
+	}
 	
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 
@@ -717,6 +729,17 @@ sub read_prototype_ids(*){
 			}
 		}
 	}
+	return $result;
+}
+
+# TODO: move to index XOR inline?
+sub get_entry($$$){
+	my $library = shift or croak;
+	my $kind = shift or croak;
+	my $id = shift or croak;
+	
+	my $result = $library->{prototypes}->entry($kind, $id);
+	croak sprintf "##### unknown thing: kind: %s, id: %04x", $kind, $id unless $result;
 	return $result;
 }
 
