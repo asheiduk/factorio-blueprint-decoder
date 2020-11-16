@@ -416,93 +416,100 @@ sub ep_circuit_connections(*$$){
 	my $entity = shift;
 	my $library = shift;
 
-	my $has_circuit_connections = read_bool($fh);
-	if($has_circuit_connections){
-		my %connections;
+	my %connections;
 
-		# connections
-		# TODO: how many "colors"? copper?
-		# https://lua-api.factorio.com/latest/defines.html#defines.wire_type
-		for my $color ("red", "green") {
-			my @peers;
-			# TODO: variable length for many connections?
-			my $peer_count = read_count8($fh);
-			for(my $p=0; $p<$peer_count; ++$p){
-				push @peers, read_u32($fh);
-				read_unknown($fh, 0x01, 0xff);
+	# TODO: how many "colors"? copper?
+	# https://lua-api.factorio.com/latest/defines.html#defines.wire_type
+	for my $color ("red", "green") {
+		my @peers;
+		# TODO: variable length for many connections?
+		my $peer_count = read_count8($fh);
+		for(my $p=0; $p<$peer_count; ++$p){
+			push @peers, read_u32($fh);
+			read_unknown($fh, 0x01, 0xff);
+		}
+		$connections{$color} = \@peers if @peers;
+	}
+	
+	# TODO: The export has another dict with key '"1"' wegded
+	# between "connections" and ("red"/"green"). Maybe circuit_connector_id
+	# https://lua-api.factorio.com/latest/defines.html#defines.circuit_connector_id
+	$entity->{connections} = \%connections if %connections;
+
+	# TODO
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
+sub ep_conditions(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+	
+	# circuit condition & logistic condition
+	my $parser = sub {
+		my $condition_name = shift;
+		my %condition;
+		
+		my $comparator_index = read_u8($fh); # default: 0x01
+		my @comparators = (">", "<", "=", "≥", "≤", "≠"); 	# same order in drop-down
+		my $comparator = $comparators[$comparator_index];
+		croak sprintf "unexpected comparator index 0x%02x", $comparator_index unless $comparator;
+
+		my $first_signal = read_type_and_name($fh, $library);
+		my $second_signal = read_type_and_name($fh, $library);
+
+		my $constant = read_s32($fh);
+		my $use_constant = read_bool($fh);
+
+		# hide "default" condition
+		if($first_signal || $comparator ne "<" || $second_signal || $constant){
+			$condition{first_signal} = $first_signal;
+			$condition{comparator} = $comparator;
+			# The export does not output data if it is hidden in the UI.
+			if($use_constant){
+				$condition{constant} = $constant;
 			}
-			$connections{$color} = \@peers if @peers;
+			else {
+				$condition{second_signal} = $second_signal;
+			}
 		}
 		
-		# TODO: The export has another dict with key '"1"' wegded
-		# between "connections" and ("red"/"green"). Maybe circuit_connector_id
-		# https://lua-api.factorio.com/latest/defines.html#defines.circuit_connector_id
-		$entity->{connections} = \%connections if %connections;
-
-		# TODO
-		read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
-
-		# circuit condition & logistic condition
-		my $parser = sub {
-			my $condition_name = shift;
-			my %condition;
-			
-			my $comparator_index = read_u8($fh); # default: 0x01
-			my @comparators = (">", "<", "=", "≥", "≤", "≠"); 	# same order in drop-down
-			my $comparator = $comparators[$comparator_index];
-			croak "unexpected comparator index 0x%02x", $comparator_index unless $comparator;
-
-			my $first_signal = read_type_and_name($fh, $library);
-			my $second_signal = read_type_and_name($fh, $library);
-
-			my $constant = read_s32($fh);
-			my $use_constant = read_bool($fh);
-
-			# hide "default" condition
-			if($first_signal || $comparator ne "<" || $second_signal || $constant){
-				$condition{first_signal} = $first_signal;
-				$condition{comparator} = $comparator;
-				# The export does not output data if it is hidden in the UI.
-				if($use_constant){
-					$condition{constant} = $constant;
-				}
-				else {
-					$condition{second_signal} = $second_signal;
-				}
-			}
-			
-			$entity->{control_behavior}{$condition_name} = \%condition if %condition;
-			
-		};
-
-		$parser->("circuit_condition");
-		$parser->("logistic_condition");
-		my $logistic_connected = read_bool($fh);
-		if($logistic_connected){
-			$entity->{control_behavior}{connect_to_logistic_network} = JSON::true;
-		}
-		else {
-			delete $entity->{control_behavior}{logistic_condition};
-		}
+		$entity->{control_behavior}{$condition_name} = \%condition if %condition;
 		
-		read_unknown($fh, 0x00, 0x00);
+	};
 
-		# maybe helpfull: https://lua-api.factorio.com/latest/defines.html#defines.control_behavior
-		# TODO: Wiki inidcates, that this is more complicated!
-		my $mode_of_operation = read_u8($fh);
-		$entity->{control_behavior}{circuit_mode_of_operation} = $mode_of_operation if $mode_of_operation;
+	$parser->("circuit_condition");
+	$parser->("logistic_condition");
+	
+	my $logistic_connected = read_bool($fh);
+	if($logistic_connected){
+		$entity->{control_behavior}{connect_to_logistic_network} = JSON::true;
+	}
+	else {
+		delete $entity->{control_behavior}{logistic_condition};
+	}
+}
 
-		my $read_hand_flag = read_bool($fh);
-		my $read_hand_mode_hold = read_bool($fh);
-		$entity->{control_behavior}{circuit_read_hand_contents} = JSON::true if $read_hand_flag;
-		$entity->{control_behavior}{circuit_hand_read_mode} = 1 if $read_hand_mode_hold;
+sub ep_mode_of_operation(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
 
-		my $set_stack_size = read_bool($fh);
-		$entity->{control_behavior}{circuit_set_stack_size} = JSON::true if $set_stack_size;
-		my $stack_size_signal = read_type_and_name($fh, $library);
-		if($stack_size_signal){
-			$entity->{control_behavior}{stack_control_input_signal} = $stack_size_signal;
-		}
+	# maybe helpfull: https://lua-api.factorio.com/latest/defines.html#defines.control_behavior
+	# TODO: Wiki inidcates, that this is more complicated!
+	my $mode_of_operation = read_u8($fh);
+	$entity->{control_behavior}{circuit_mode_of_operation} = $mode_of_operation if $mode_of_operation;
+
+	my $read_hand_flag = read_bool($fh);
+	my $read_hand_mode_hold = read_bool($fh);
+	$entity->{control_behavior}{circuit_read_hand_contents} = JSON::true if $read_hand_flag;
+	$entity->{control_behavior}{circuit_hand_read_mode} = 1 if $read_hand_mode_hold;
+
+	my $set_stack_size = read_bool($fh);
+	$entity->{control_behavior}{circuit_set_stack_size} = JSON::true if $set_stack_size;
+	my $stack_size_signal = read_type_and_name($fh, $library);
+	if($stack_size_signal){
+		$entity->{control_behavior}{stack_control_input_signal} = $stack_size_signal;
 	}
 }
 
@@ -557,13 +564,25 @@ sub read_entity_inserter_details(*$$){
 	}
 
 	# circuit network connections
-	ep_circuit_connections($fh, $entity, $library);
+	my $has_circuit_connections = read_bool($fh);
+	if($has_circuit_connections){
+		# connections
+		ep_circuit_connections($fh, $entity, $library);
+		
+		# circuit condition & logistic condition
+		ep_conditions($fh, $entity, $library);
+		read_unknown($fh, 0x00, 0x00);
 
+		# mode of operation
+		ep_mode_of_operation($fh, $entity, $library);
+	}
+	
 	# item filters
 	ep_filters($fh, $entity, $library);
 	unless($flags2 & 0x02){
 		$entity->{filter_mode} = "blacklist";
 	}
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
 
 my %entity_details_handlers = (
@@ -614,8 +633,6 @@ sub read_entity(*$$$$){
 		croak "unexpected type-class '$type_class'";
 	}
 	
-	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
-
 	return $entity;
 }
 
