@@ -531,6 +531,41 @@ sub ep_filters(*$$){
 	}
 }
 
+sub read_entity_inserter_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	# entity ids
+	ep_entity_ids($fh, $entity, $library);
+	
+	my $flags2 = read_u8($fh);
+	# 0x01 -- override_stack_size
+	# 0x02 -- filter_mode: 0=blacklist, 1(default)=whitelist
+	# 0x04 -- TODO - unknown - default=1(?)
+	# others: TODO - unknown - default=0(?)
+	if( ($flags2|0x03) != 0x07 ){
+		croak sprintf "unexpected flags2 %02x at position 0x%x", $flags2, tell($fh)-1;
+	}
+	
+	# direction
+	ep_direction($fh, $entity, $library);
+
+	# override stack size
+	if($flags2 & 0x01){
+		$entity->{override_stack_size} = read_u8($fh);
+	}
+
+	# circuit network connections
+	ep_circuit_connections($fh, $entity, $library);
+
+	# item filters
+	ep_filters($fh, $entity, $library);
+	unless($flags2 & 0x02){
+		$entity->{filter_mode} = "blacklist";
+	}
+}
+
 # parameter:
 # - $fh
 # - $library
@@ -564,35 +599,8 @@ sub read_entity(*$$$$){
 	};
 	
 	read_unknown($fh, 0x20);
-
-	# entity ids
-	ep_entity_ids($fh, $entity, $library);
 	
-	my $flags2 = read_u8($fh);
-	# 0x01 -- override_stack_size
-	# 0x02 -- filter_mode: 0=blacklist, 1(default)=whitelist
-	# 0x04 -- TODO - unknown - default=1(?)
-	# others: TODO - unknown - default=0(?)
-	if( ($flags2|0x03) != 0x07 ){
-		croak sprintf "unexpected flags2 %02x at position 0x%x", $flags2, tell($fh)-1;
-	}
-	
-	# direction
-	ep_direction($fh, $entity, $library);
-
-	# override stack size
-	if($flags2 & 0x01){
-		$entity->{override_stack_size} = read_u8($fh);
-	}
-
-	# circuit network connections
-	ep_circuit_connections($fh, $entity, $library);
-
-	# item filters
-	ep_filters($fh, $entity, $library);
-	unless($flags2 & 0x02){
-		$entity->{filter_mode} = "blacklist";
-	}
+	read_entity_inserter_details($fh, $entity, $library);
 	
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 
