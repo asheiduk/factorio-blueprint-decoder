@@ -413,6 +413,12 @@ sub ep_bar(*$$){
 		"wooden-chest" => 0x10,
 		"iron-chest"   => 0x20,
 		"steel-chest"  => 0x30,
+		# logistic-container
+		"logistic-chest-active-provider"	=> 0x30,
+		"logistic-chest-passive-provider"	=> 0x30,
+		"logistic-chest-storage"	=> 0x30,
+		"logistic-chest-requester"	=> 0x30,
+		"logistic-chest-buffer"		=> 0x30,
 	);
 	my $default_bar = $bar_defaults{$entity->{name}};
 	if( not defined $default_bar or $default_bar != $bar){
@@ -668,10 +674,66 @@ sub read_entity_container_details(*$$){
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
 
+sub read_entity_logistic_container_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+	
+	# entity ids
+	ep_entity_ids($fh, $entity, $library);
+
+	# restriction aka. "bar"
+	ep_bar($fh, $entity, $library);
+	
+	read_unknown($fh, 0x00, 0x00);
+
+	read_unknown($fh, 0x01);
+	my $mode = read_u8($fh); 	# not used in export
+	croak "unknown logistic mode $mode" if($mode<1 || $mode>5);
+	read_unknown($fh, 0x03);
+	my @request_filters;
+	my $filter_count = read_count8($fh);
+	for(my $f=0; $f<$filter_count; ++$f){
+		my $item_id = read_u16($fh);
+		my $item_count = read_u32($fh);
+		read_unknown($fh);
+		if($item_id){
+			my $item_name = get_name($library, Index::ITEM, $item_id);
+			push @request_filters, {
+				name => $item_name,
+				count => $item_count
+			};
+		}
+		else {
+			push @request_filters, undef;
+		}
+	}
+	if($filter_count > 0){
+		# TODO: strange: first occurance of the pattern that the lst size affects
+		# the presence/absence of data after the list.
+		my $request_from_buffers = read_bool($fh);
+		$entity->{request_from_buffers} = JSON::true if $request_from_buffers;
+	}
+
+	# TODO: export compresses the filter list
+	$entity->{request_filters} = \@request_filters if @request_filters;
+
+	read_unknown($fh, 0x00, 0x00);
+	 
+	# circuit connection
+	my $has_connections = read_bool($fh);
+	if($has_connections){
+		ep_circuit_connections($fh, $entity, $library);
+		read_unknown($fh, 0x00);
+	}
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
 my %entity_details_handlers = (
 	"inserter" => \&read_entity_inserter_details,
 	"constant-combinator" => \&read_entity_constant_combinator_details,
 	"container" => \&read_entity_container_details,
+	"logistic-container" => \&read_entity_logistic_container_details,
 );
 
 # parameter:
