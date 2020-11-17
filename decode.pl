@@ -400,6 +400,26 @@ sub ep_entity_ids(*$$){
 	}
 }
 
+sub ep_bar(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	my $bar = read_u8($fh);
+	# The export format suppresses the default values. But these
+	# are - in general - unknown to me beyond the vanilla chests.
+	my %bar_defaults = (
+		# container
+		"wooden-chest" => 0x10,
+		"iron-chest"   => 0x20,
+		"steel-chest"  => 0x30,
+	);
+	my $default_bar = $bar_defaults{$entity->{name}};
+	if( not defined $default_bar or $default_bar != $bar){
+		$entity->{bar} = $bar;
+	}
+}
+
 sub ep_direction(*$$){
 	my $fh = shift;
 	my $entity = shift;
@@ -626,9 +646,32 @@ sub read_entity_constant_combinator_details(*$$){
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
 
+sub read_entity_container_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+	
+	# entity ids
+	ep_entity_ids($fh, $entity, $library);
+
+	# restriction aka. "bar"
+	ep_bar($fh, $entity, $library);
+	
+	read_unknown($fh, 0x00);
+
+	# circuit connection
+	my $has_connections = read_bool($fh);
+	if($has_connections){
+		ep_circuit_connections($fh, $entity, $library);
+	}
+	
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
 my %entity_details_handlers = (
 	"inserter" => \&read_entity_inserter_details,
 	"constant-combinator" => \&read_entity_constant_combinator_details,
+	"container" => \&read_entity_container_details,
 );
 
 # parameter:
