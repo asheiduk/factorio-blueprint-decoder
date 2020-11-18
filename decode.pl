@@ -419,6 +419,8 @@ sub ep_bar(*$$){
 		"logistic-chest-storage"	=> 0x30,
 		"logistic-chest-requester"	=> 0x30,
 		"logistic-chest-buffer"		=> 0x30,
+		# cheat mode
+		"infinity-chest" => 0x30,
 	);
 	my $default_bar = $bar_defaults{$entity->{name}};
 	if( not defined $default_bar or $default_bar != $bar){
@@ -729,11 +731,52 @@ sub read_entity_logistic_container_details(*$$){
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
 
+sub read_entity_infinity_container_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	# entity ids
+	ep_entity_ids($fh, $entity, $library);
+
+	# restriction aka. "bar"
+	ep_bar($fh, $entity, $library);
+
+	read_unknown($fh, 0x00, 0x00, 0x00);
+
+	# circuit connection
+	my $has_connections = read_bool($fh);
+	if($has_connections){
+		ep_circuit_connections($fh, $entity, $library);
+		read_unknown($fh, 0x00);
+	}
+		
+	# infinity_settings
+	my @filters;
+	my $filter_count = read_count8($fh);
+	for(my $f=0; $f<$filter_count; ++$f){
+		my $item_id = read_u16($fh);
+		my $count = read_u32($fh);
+		my $mode = read_u8($fh);
+		push @filters, {
+			name => get_name($library, Index::ITEM, $item_id),
+			count => $count,
+			mode => ("at-least", "at-most", "exactly")[$mode]
+		};
+	}
+	$entity->{infinity_settings}{filters} = \@filters if @filters;
+	my $remove_unfiltered_items = read_bool($fh);
+	$entity->{infinity_settings}{remove_unfiltered_items} = (JSON::false, JSON::true)[$remove_unfiltered_items];
+
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
 my %entity_details_handlers = (
 	"inserter" => \&read_entity_inserter_details,
 	"constant-combinator" => \&read_entity_constant_combinator_details,
 	"container" => \&read_entity_container_details,
 	"logistic-container" => \&read_entity_logistic_container_details,
+	"infinity-container" => \&read_entity_infinity_container_details,
 );
 
 # parameter:
