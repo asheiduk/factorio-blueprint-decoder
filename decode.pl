@@ -876,7 +876,25 @@ sub read_blueprint(*$){
 		$last_y = $position{y};
 	}
 
-	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh);
+
+	my $tile_count = read_count32($fh);
+	printf "tiles: %d\n", $tile_count;
+	for(my $t=0; $t<$tile_count; ++$t){
+		my $x = read_s32($fh);
+		my $y = read_s32($fh);
+		my $id = read_u8($fh);
+		my $name = get_name($library, Index::TILE, $id);
+		push @{$result->{tiles}}, {
+			name => $name,
+			position => {
+				x => $x,
+				y => $y
+			}
+		};
+	}
+
+	read_unknown($fh);
 
 	my $icon_count = read_count8($fh);
 	if($icon_count>0){

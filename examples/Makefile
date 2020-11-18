@@ -8,12 +8,12 @@ parsable_dats = \
 	bps-signal-names.dat \
 	bps-one-empty-blueprint.dat \
 	bps-chests.dat \
+	bps-with-tiles.dat \
 
 unparsable_dats = \
 	bps-empty.dat \
 	bps-pipes.dat \
 	bps-most-buildings.dat \
-	bps-with-tiles.dat
 
 exports = $(wildcard *.export)
 
