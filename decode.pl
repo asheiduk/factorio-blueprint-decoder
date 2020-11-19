@@ -771,12 +771,32 @@ sub read_entity_infinity_container_details(*$$){
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
 
+sub read_entity_pipe_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
+sub read_entity_pipe_to_ground_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	read_unknown($fh);
+	ep_direction($$fh, $entity, $library);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
 my %entity_details_handlers = (
 	"inserter" => \&read_entity_inserter_details,
 	"constant-combinator" => \&read_entity_constant_combinator_details,
 	"container" => \&read_entity_container_details,
 	"logistic-container" => \&read_entity_logistic_container_details,
 	"infinity-container" => \&read_entity_infinity_container_details,
+	"pipe" => \&read_entity_pipe_details,
+	"pipe-to-ground" => \&read_entity_pipe_to_ground_details,
 );
 
 # parameter:
