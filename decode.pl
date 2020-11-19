@@ -839,6 +839,46 @@ sub read_entity(*$$$$){
 # parts for blueprints, blueprint books and blueprint library
 #
 
+sub bp_entities(*$$){
+	my $fh = shift;
+	my $library = shift;
+	my $result = shift;
+	
+	my $entity_count = read_count32($fh);
+	printf "entities: %d\n", $entity_count;
+	my ($last_x, $last_y) = (0, 0);
+	for(my $e=0; $e<$entity_count; ++$e){
+		my $entity = read_entity($fh, $library, $e, $last_x, $last_y);
+		my %position = %{$entity->{position}};
+
+		push @{$result->{entities}}, $entity;
+		$last_x = $position{x};
+		$last_y = $position{y};
+	}
+}
+
+sub bp_tiles(*$$){
+	my $fh = shift;
+	my $library = shift;
+	my $result = shift;
+	
+	my $tile_count = read_count32($fh);
+	printf "tiles: %d\n", $tile_count;
+	for(my $t=0; $t<$tile_count; ++$t){
+		my $x = read_s32($fh);
+		my $y = read_s32($fh);
+		my $id = read_u8($fh);
+		my $name = get_name($library, Index::TILE, $id);
+		push @{$result->{tiles}}, {
+			name => $name,
+			position => {
+				x => $x,
+				y => $y
+			}
+		};
+	}
+}
+
 sub bp_icons(*$$){
 	my $fh = shift;
 	my $library = shift;
@@ -936,36 +976,12 @@ sub read_blueprint(*$){
 		my $absolute_snapping = read_bool($fh);
 		$result->{"absolute-snapping"} = JSON::true if $absolute_snapping;
 	}
-	
-	my $entity_count = read_count32($fh);
-	printf "entities: %d\n", $entity_count;
-	my ($last_x, $last_y) = (0, 0);
-	for(my $e=0; $e<$entity_count; ++$e){
-		my $entity = read_entity($fh, $library, $e, $last_x, $last_y);
-		my %position = %{$entity->{position}};
 
-		push @{$result->{entities}}, $entity;
-		$last_x = $position{x};
-		$last_y = $position{y};
-	}
+	bp_entities($fh, $library, $result);
 
 	read_unknown($fh);
 
-	my $tile_count = read_count32($fh);
-	printf "tiles: %d\n", $tile_count;
-	for(my $t=0; $t<$tile_count; ++$t){
-		my $x = read_s32($fh);
-		my $y = read_s32($fh);
-		my $id = read_u8($fh);
-		my $name = get_name($library, Index::TILE, $id);
-		push @{$result->{tiles}}, {
-			name => $name,
-			position => {
-				x => $x,
-				y => $y
-			}
-		};
-	}
+	bp_tiles($fh, $library, $result);
 
 	read_unknown($fh);
 
