@@ -142,18 +142,6 @@ sub name($$$) {
 	return $entry->{name};
 }
 
-sub id($$$$){
-	my $self = shift or croak;
-	my $kind = shift or croak;
-	my $class = shift or croak;
-	my $name = shift or croak;
-
-	for my $v (values %{$self->{$kind}}){
-		return $v->{id} if $v->{class} eq $class && $v->{name} eq $name;
-	}
-	return undef;
-}
-
 sub _map_class_to_kind($$){
 	my $self = shift or croak;
 	my $class = shift or croak;
@@ -848,7 +836,71 @@ sub read_entity(*$$$$){
 
 ################################################################
 #
-# blueprint
+# parts for blueprints, blueprint books and blueprint library
+#
+
+sub bp_icons(*$$){
+	my $fh = shift;
+	my $library = shift;
+	my $result = shift;
+
+	my $icon_count = read_count8($fh);
+	if($icon_count>0){
+		printf "icons: %s\n", $icon_count;
+		my @icons;
+		for(my $i=0; $i<$icon_count; ++$i){
+			my $icon = read_type_and_name($fh, $library);
+			if($icon){
+				printf "    [%d] '%s' / '%s'\n", $i, $icon->{type}, $icon->{name};
+				push @icons, $icon;
+			}
+			else {
+				printf "    [%d] (none)\n", $i;
+				push @icons, undef;
+			}
+		}
+		$result->{icons} = \@icons;
+	}
+}
+
+my %library_entry_handlers = (
+	"blueprint" => \&read_blueprint,
+	"blueprint-book" => \&read_blueprint_book,
+);
+
+sub bp_blueprints(*$$){
+	my $fh = shift;
+	my $library = shift;
+	my $result = shift;
+	
+	my $blueprint_count = read_count32($fh);
+	printf "\nblueprints: %d\n", $blueprint_count;
+	my @blueprints;
+	for(my $b=0; $b<$blueprint_count; ++$b){
+		my $is_used = read_bool($fh);
+		if($is_used){
+			printf "\n[%d] library slot: used\n", $b;
+			read_ignore($fh, 5); 	# perhaps some generation counter?
+			my $type_id = read_u16($fh);
+			my $type_entry = get_entry($library, Index::ITEM, $type_id);
+			my $type_class = $type_entry->{class};
+			my $type_handler = $library_entry_handlers{$type_class};
+			croak sprintf "unexpected type-class: %04x '%s'", $type_id, $type_class unless $type_handler;
+			my $handler_result = $type_handler->($fh, $library);
+			push @blueprints, $handler_result;
+		}
+		else {
+			printf "\n[%d] library slot: free\n", $b;
+			push @blueprints, undef;
+		}
+	}
+	$result->{blueprints} = \@blueprints;
+}
+
+################################################################
+#
+# blueprints & blueprint books
+#
 
 sub read_blueprint(*$){
 	my $fh = shift;
@@ -857,6 +909,7 @@ sub read_blueprint(*$){
 
 	my $file_position = tell($fh);
 	
+	$result->{item} = "blueprint";
 	$result->{label} = read_string($fh);
 	printf "blueprint '%s' (@%04x)\n", $result->{label}, $file_position;
 
@@ -916,24 +969,35 @@ sub read_blueprint(*$){
 
 	read_unknown($fh);
 
-	my $icon_count = read_count8($fh);
-	if($icon_count>0){
-		printf "icons: %s\n", $icon_count;
-		my @icons;
-		for(my $i=0; $i<$icon_count; ++$i){
-			my $icon = read_type_and_name($fh, $library);
-			if($icon){
-				printf "    [%d] '%s' / '%s'\n", $i, $icon->{type}, $icon->{name};
-				push @icons, $icon;
-			}
-			else {
-				printf "    [%d] (none)\n", $i;
-				push @icons, undef;
-			}
-		}
-		$result->{icons} = \@icons;
-	}
+	bp_icons($fh, $library, $result);
 
+	return $result;
+}
+
+sub read_blueprint_book(*$){
+	my $fh = shift;
+	my $library = shift;
+	my $result = {};
+
+	my $file_position = tell $fh;
+	
+	$result->{item} = "blueprint-book";
+	$result->{label} = read_string($fh);
+	
+	printf "blueprint-book '%s' (@%04x)\n", $result->{label}, $file_position;
+	
+	$result->{description} = read_string($fh);
+	read_unknown($fh);
+	bp_icons($fh, $library, $result);
+
+	bp_blueprints($fh, $library, $result);
+
+	my $active_index = read_u8($fh); 	# TODO: 8/32 length?
+	$result->{active_index} = $active_index if $active_index;
+	
+	read_unknown($fh, 0x00);
+
+	printf "end of book '%s' (@%04x)\n", $result->{label}, tell $fh;
 	return $result;
 }
 
@@ -989,17 +1053,6 @@ sub get_entry($$$){
 }
 
 # TODO: move to index XOR inline?
-sub get_item_id($$$){
-	my $library = shift or croak;
-	my $class = shift or croak;
-	my $name = shift or croak;
-
-	my $result = $library->{prototypes}->id(Index::ITEM, $class, $name);
-	croak sprintf "##### unknown item name: %s, %s", $class, $name unless $result;
-	return $result;
-}
-
-# TODO: move to index XOR inline?
 sub get_name($$$){
 	my $library = shift or croak;
 	my $kind = shift or croak;
@@ -1024,31 +1077,8 @@ sub read_blueprint_library(*){
 	read_unknown($fh, 0x00, 0x00, 0x00);
 	read_ignore($fh, 4); # u32 unix timestamp
 	read_unknown($fh, 0x01);
-	
-	my $blueprint_count = read_count16($fh);
-	printf "\nblueprints: %d\n", $blueprint_count;
-	read_unknown($fh, 0x00, 0x00);
 
-	my $blueprint_id = get_item_id($result, "blueprint", "blueprint");
-	for(my $b=0; $b<$blueprint_count; ++$b){
-		my $is_used = read_bool($fh);
-
-		if($is_used){
-			printf "\n[%d] library slot: used\n", $b;
-			read_ignore($fh, 5); 	# perhaps some generation counter?
-			my $type = read_u16($fh);
-			if($type == $blueprint_id){
-				push @{$result->{blueprints}}, read_blueprint($fh, $result);
-			}
-			else {
-				croak sprintf "unexpected type: %04x", $type;
-			}
-			
-		}
-		else {
-			printf "\n[%d] library slot: free\n", $b;
-		}
-	}
+	bp_blueprints($fh, $result, $result);
 	
 	return $result;
 }

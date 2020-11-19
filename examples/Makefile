@@ -10,9 +10,10 @@ parsable_dats = \
 	bps-chests.dat \
 	bps-pipes.dat \
 	bps-with-tiles.dat \
+	bps-empty.dat \
+	bps-books.dat \
 
 unparsable_dats = \
-	bps-empty.dat \
 	bps-most-buildings.dat \
 
 exports = $(wildcard *.export)
