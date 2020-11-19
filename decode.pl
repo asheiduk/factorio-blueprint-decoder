@@ -273,32 +273,6 @@ sub read_count32(*){
 #
 # mid level parsing -- without Index
 
-# maybe helpfull: https://wiki.factorio.com/Version_string_format
-sub read_version(*){
-	my $fh = shift;
-	my @result;
-	for(1..4){
-		push @result, read_u16($fh);
-	}
-	printf "version: %s\n", join ".", @result;
-	return \@result;
-}
-
-sub read_migrations(*){
-	my $fh = shift;
-	my $result = [];
-	
-	my $count = read_count8($fh);
-	printf "migrations: %d\n", $count;
-	for(my $i=0; $i<$count; ++$i){
-		my $mod_name = read_string($fh);
-		my $migration_file = read_string($fh);
-		printf "    [%d] mod '%s', migration '%s'\n", $i, $mod_name, $migration_file;
-		push @$result, { mod_name => $mod_name, migration_file => $migration_file }
-	}
-	return $result;
-}
-
 # maybe helpfull: https://wiki.factorio.com/Data_types
 # maybe helpfull: https://wiki.factorio.com/Types/Position
 sub read_delta_position(*){
@@ -839,6 +813,74 @@ sub read_entity(*$$$$){
 # parts for blueprints, blueprint books and blueprint library
 #
 
+# maybe helpfull: https://wiki.factorio.com/Version_string_format
+sub bp_version(*$$){
+	my $fh = shift;
+	my $library = shift;
+	my $result = shift;
+	
+	my @version;
+	for(1..4){
+		push @version, read_u16($fh);
+	}
+	printf "version: %s\n", join ".", @version;
+	$result->{version} = \@version;
+}
+
+sub bp_migrations(*$$){
+	my $fh = shift;
+	my $library = shift;
+	my $result = shift;
+
+	my @migrations;
+	my $count = read_count8($fh);
+	printf "migrations: %d\n", $count;
+	for(my $i=0; $i<$count; ++$i){
+		my $mod_name = read_string($fh);
+		my $migration_file = read_string($fh);
+		printf "    [%d] mod '%s', migration '%s'\n", $i, $mod_name, $migration_file;
+		push @migrations, { mod_name => $mod_name, migration_file => $migration_file }
+	}
+	
+	$result->{migrations} = \@migrations;
+}
+
+sub bp_prototype_index(*){
+	my $fh = shift;
+	my $result = Index->new;
+	
+	my $class_count = read_count16($fh);
+	printf "used prototype classes: %d\n", $class_count;
+	for(my $c=0; $c<$class_count; ++$c){
+	
+		my $class_name = read_string($fh);
+		my $proto_count = read_count8($fh);
+		
+		if( $class_name eq "tile" ){		# TODO: strange exception
+			printf "    [%d] class '%s' - entries: %d\n", $c, $class_name, $proto_count;
+			for(my $p=0; $p<$proto_count; ++$p){
+				my $proto_id = read_u8($fh);
+				my $proto_name = read_string($fh);
+				printf "        [%d] %02x '%s'\n", $p, $proto_id, $proto_name;
+				$result->add($proto_id, $class_name, $proto_name);
+#				$result->{$kind_name."/".$proto_name} = $proto_id;
+			}
+		}
+		else {
+			printf "    [%d] class '%s' - entries: %d\n", $c, $class_name, $proto_count;
+			read_unknown($fh); 		# TODO: another strange exception: data between count and list
+			for(my $p=0; $p<$proto_count; ++$p){
+				my $proto_id = read_u16($fh);
+				my $proto_name = read_string($fh);
+				printf "        [%d] %04x '%s'\n", $p, $proto_id, $proto_name;
+				$result->add($proto_id, $class_name, $proto_name);
+#				$result->{$cat_name."/".$entry_name} = $entry_id;
+			}
+		}
+	}
+	return $result;
+}
+
 sub bp_entities(*$$){
 	my $fh = shift;
 	my $library = shift;
@@ -939,7 +981,7 @@ sub bp_blueprints(*$$){
 
 ################################################################
 #
-# blueprints & blueprint books
+# blueprints, blueprint books and blueprint library
 #
 
 sub read_blueprint(*$){
@@ -955,12 +997,12 @@ sub read_blueprint(*$){
 
 	read_unknown($fh, 0x00, 0x00, 0xff);
 	read_ignore($fh, 4); 	# maybe some offset (with previous 0xff an flexible u8/u32 length?)
-	
-	$result->{version} = read_version($fh);
+
+	bp_version($fh, $library, $result);
 	
 	read_unknown($fh);
-	
-	$result->{migrations} = read_migrations($fh);
+
+	bp_migrations($fh, $library, $result);
 
 	$result->{description} = read_string($fh);
 
@@ -1017,45 +1059,29 @@ sub read_blueprint_book(*$){
 	return $result;
 }
 
-################################################################
-#
-# blueprint library
-
-sub read_prototype_ids(*){
+sub read_blueprint_library(*){
 	my $fh = shift;
-	my $result = Index->new;
+	my $result = {};
+
+	bp_version($fh, $result, $result);
+	read_unknown($fh);
+	bp_migrations($fh, $result, $result);
+	$result->{prototypes} = bp_prototype_index($fh);
+
+	read_unknown($fh, 0x00, 0x00);
+	read_ignore($fh, 1); # a small generation/save/copy counter?
+	read_unknown($fh, 0x00, 0x00, 0x00);
+	read_ignore($fh, 4); # u32 unix timestamp
+	read_unknown($fh, 0x01);
+
+	bp_blueprints($fh, $result, $result);
 	
-	my $class_count = read_count16($fh);
-	printf "used prototype classes: %d\n", $class_count;
-	for(my $c=0; $c<$class_count; ++$c){
-	
-		my $class_name = read_string($fh);
-		my $proto_count = read_count8($fh);
-		
-		if( $class_name eq "tile" ){		# TODO: strange exception
-			printf "    [%d] class '%s' - entries: %d\n", $c, $class_name, $proto_count;
-			for(my $p=0; $p<$proto_count; ++$p){
-				my $proto_id = read_u8($fh);
-				my $proto_name = read_string($fh);
-				printf "        [%d] %02x '%s'\n", $p, $proto_id, $proto_name;
-				$result->add($proto_id, $class_name, $proto_name);
-#				$result->{$kind_name."/".$proto_name} = $proto_id;
-			}
-		}
-		else {
-			printf "    [%d] class '%s' - entries: %d\n", $c, $class_name, $proto_count;
-			read_unknown($fh); 		# TODO: another strange exception: data between count and list
-			for(my $p=0; $p<$proto_count; ++$p){
-				my $proto_id = read_u16($fh);
-				my $proto_name = read_string($fh);
-				printf "        [%d] %04x '%s'\n", $p, $proto_id, $proto_name;
-				$result->add($proto_id, $class_name, $proto_name);
-#				$result->{$cat_name."/".$entry_name} = $entry_id;
-			}
-		}
-	}
 	return $result;
 }
+
+################################################################
+#
+# utilities
 
 # TODO: move to index XOR inline?
 sub get_entry($$$){
@@ -1076,26 +1102,6 @@ sub get_name($$$){
 
 	my $result = $library->{prototypes}->name($kind, $id);
 	croak sprintf "##### unknown thing: kind: %s, id: %04x", $kind, $id unless $result;
-	return $result;
-}
-
-sub read_blueprint_library(*){
-	my $fh = shift;
-	my $result = {};
-
-	$result->{version} = read_version($fh);
-	read_unknown($fh);
-	$result->{migrations} = read_migrations($fh);
-	$result->{prototypes} = read_prototype_ids($fh);
-
-	read_unknown($fh, 0x00, 0x00);
-	read_ignore($fh, 1); # a small generation/save/copy counter?
-	read_unknown($fh, 0x00, 0x00, 0x00);
-	read_ignore($fh, 4); # u32 unix timestamp
-	read_unknown($fh, 0x01);
-
-	bp_blueprints($fh, $result, $result);
-	
 	return $result;
 }
 
