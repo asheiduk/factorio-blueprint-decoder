@@ -25,11 +25,12 @@ use constant {
 	FLUID => "fluid",
 	VSIGNAL => "virtual-signal",
 	TILE => "tile",
-	ENTITY => "entity"
+	ENTITY => "entity",
+	RECIPE => "recipe",
 };
 
 my %_kind_mapping = (
-	# item (0)
+	# item
 	ammo => ITEM,
 	armor => ITEM,
 	blueprint => ITEM,
@@ -45,9 +46,9 @@ my %_kind_mapping = (
 	"repair-tool" => ITEM,
 	tool => ITEM,
 	"upgrade-item" => ITEM,
-	# fluid (1)
+	# fluid
 	fluid => FLUID,
-	# virtual-signal (2)
+	# virtual-signal
 	"virtual-signal" => VSIGNAL,
 	# entity
 	accumulator => ENTITY,
@@ -109,6 +110,8 @@ my %_kind_mapping = (
 	"wall" => ENTITY,
 	# tile
 	tile => TILE,
+	# recipe
+	recipe => RECIPE,
 );
 
 sub new {
