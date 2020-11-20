@@ -969,6 +969,7 @@ my %library_entry_handlers = (
 	"blueprint" => \&read_blueprint,
 	"blueprint-book" => \&read_blueprint_book,
 	"deconstruction-item" => \&read_deconstruction_item,
+	"upgrade-item" => \&read_upgrade_item,
 );
 
 sub bp_blueprints(*$$){
@@ -1004,6 +1005,65 @@ sub bp_blueprints(*$$){
 #
 # blueprints, blueprint books, blueprint library and similar
 #
+
+sub read_upgrade_item(*$){
+	my $fh = shift;
+	my $library = shift;
+	my $result = {};
+
+
+	$result->{item} = "upgrade-planner";
+	$result->{label} = read_string($fh);
+	$result->{settings}{description} = read_string($fh);
+	
+	printf "upgrade-item '%s'\n", $result->{label};
+
+	read_unknown($fh);
+
+	bp_icons($fh, $library, $result);
+
+	read_unknown($fh);
+
+
+	my $reader = sub {
+		my $is_item = read_bool($fh);
+		my $id = read_u16($fh);
+		
+		return undef unless $id;
+		if($is_item){
+			return {
+				type => "item",
+				name => get_name($library, Index::ITEM, $id)
+			};
+		}
+		else {
+			return {
+				type => "entity",
+				name => get_name($library, Index::ENTITY, $id)
+			};
+		}
+	};
+
+	my $mapper_count = read_u8($fh);
+	my @mappers;
+	for(my $m=0; $m<$mapper_count; ++$m){
+		# see read_type_and_name but the types are different :-(
+		my $from = $reader->();
+		my $to =$reader->();
+		if( $from || $to ){
+			push @mappers, {
+				from => $from,
+				to => $to
+			};
+		}
+		else {
+			push @mappers, undef;
+		}
+	}
+	$result->{settings}{mappers} = \@mappers;
+
+	return $result;	
+}
 
 sub read_deconstruction_item(*$){
 	my $fh = shift;
