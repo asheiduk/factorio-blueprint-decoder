@@ -949,6 +949,7 @@ sub bp_icons(*$$){
 my %library_entry_handlers = (
 	"blueprint" => \&read_blueprint,
 	"blueprint-book" => \&read_blueprint_book,
+	"deconstruction-item" => \&read_deconstruction_item,
 );
 
 sub bp_blueprints(*$$){
@@ -982,8 +983,72 @@ sub bp_blueprints(*$$){
 
 ################################################################
 #
-# blueprints, blueprint books and blueprint library
+# blueprints, blueprint books, blueprint library and similar
 #
+
+sub read_deconstruction_item(*$){
+	my $fh = shift;
+	my $library = shift;
+	my $result = {};
+
+	$result->{item} = "deconstruction-planner";
+	$result->{label} = read_string($fh);
+	$result->{settings}{description} = read_string($fh);
+
+	printf "deconstruction-item '%s'\n", $result->{label};
+
+	read_unknown($fh);
+	
+	bp_icons($fh, $library, $result);
+
+	my $entity_filter_mode = read_u8($fh);
+	$result->{settings}{entity_filter_mode} = $entity_filter_mode if $entity_filter_mode;
+
+	read_unknown($fh, 0x00);
+	
+	my $entity_filter_count = read_count8($fh);
+	printf "entity-filters: %d\n", $entity_filter_count;
+	my @entity_filters;
+	for(my $f=0; $f<$entity_filter_count; ++$f){
+		my $item_id = read_u16($fh);
+		if($item_id != 0x00){
+			my $item_name = get_name($library, Index::ENTITY, $item_id);
+			push @entity_filters, $item_name;
+		}
+		else {
+			push @entity_filters, undef;
+		}
+	}
+	$result->{settings}{entity_filters} = \@entity_filters;
+
+	my $trees_and_rocks_only = read_bool($fh);
+	$result->{settings}{trees_and_rocks_only} = JSON::true if $trees_and_rocks_only;
+
+	my $tile_filter_mode = read_u8($fh);
+	$result->{settings}{tile_filter_mode} = $tile_filter_mode if $tile_filter_mode;
+
+	my $tile_selection_mode = read_u8($fh);
+	$result->{settings}{tile_selection_mode} = $tile_selection_mode if $tile_selection_mode;
+	
+	read_unknown($fh);
+
+	my $tile_filter_count = read_count8($fh);
+	printf "tile-filters: %d\n", $tile_filter_count;
+	my @tile_filters;
+	for(my $t=0; $t<$tile_filter_count; ++$t){
+		my $tile_id = read_u8($fh);
+		if($tile_id != 0x00){
+			my $tile_name = get_name($library, Index::TILE, $tile_id);
+			push @tile_filters, $tile_name;
+		}
+		else {
+			push @tile_filters, undef;
+		}
+	}
+	$result->{settings}{tile_filters} = \@tile_filters;
+	
+	return $result;
+}
 
 sub read_blueprint(*$){
 	my $fh = shift;
