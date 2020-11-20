@@ -13,6 +13,7 @@ parsable_dats = \
 	bps-empty.dat \
 	bps-books.dat \
 	bps-planner.dat \
+	bps-planner-ids.dat \
 
 unparsable_dats = \
 	bps-most-buildings.dat \
