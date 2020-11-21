@@ -874,6 +874,27 @@ sub read_entity_splitter_details(*$$){
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
 
+sub read_electric_pole_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	ep_entity_ids($fh, $entity, $library);
+	
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00);
+	
+	# circuit network connections
+	my $has_circuit_connections = read_bool($fh);
+	if($has_circuit_connections){
+		# connections
+		ep_circuit_connections($fh, $entity, $library);
+	}
+	
+	read_unknown($fh, 0x00);
+	
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
 my %entity_details_handlers = (
 	"inserter" => \&read_entity_inserter_details,
 	"constant-combinator" => \&read_entity_constant_combinator_details,
@@ -885,6 +906,7 @@ my %entity_details_handlers = (
 	"transport-belt" => \&read_entity_transport_belt_details,
 	"underground-belt" => \&read_entity_underground_belt_details,
 	"splitter" => \&read_entity_splitter_details,
+	"electric-pole" => \& read_electric_pole_details,
 );
 
 # parameter:
