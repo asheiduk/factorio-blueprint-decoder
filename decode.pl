@@ -551,6 +551,27 @@ sub ep_filters(*$$){
 	}
 }
 
+sub ep_modules(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	# Interesting point: Modules are not a simple list like icons.
+	# Instead the modules are first sorted and then grouped by type.
+	# So building an assembler with modules Eff1, Sp1, Eff1, Sp1 the blueprint
+	# only contains only the data "Sp1: 2, Eff:2". So some details are omitted.
+	
+	my %items;
+	my $item_count = read_count32($fh);
+	for(my $i=0; $i<$item_count; ++$i){
+		my $item_id = read_u16($fh);
+		my $item_name = get_name($library, Index::ITEM, $item_id);
+		my $item_count = read_u32($fh);
+		$items{$item_name} = $item_count;
+	}
+	$entity->{items} = \%items if %items;
+}
+
 sub read_entity_inserter_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
@@ -895,6 +916,84 @@ sub read_electric_pole_details(*$$){
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
 
+sub read_mining_drill_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	ep_entity_ids($fh, $entity, $library);
+	ep_direction($$fh, $entity, $library);
+
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+
+	
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+
+	my $is_pumpjack = read_bool($fh); 	# 1 for pumpjack, 0 otherwise
+	
+	read_unknown($fh, 0x00);
+
+	# circuit network connections
+	my $has_circuit_connections = read_bool($fh);
+	if($has_circuit_connections){
+		# connections
+		ep_circuit_connections($fh, $entity, $library);
+		
+		# circuit condition & logistic condition
+		ep_conditions($fh, $entity, $library);
+		read_unknown($fh, 0x00, 0x00);
+
+		# mode of operation (specific for mining_drill)
+		
+		# maybe helpfull: https://lua-api.factorio.com/latest/defines.html#defines.control_behavior
+
+		my $circuit_enable_disable = read_u8($fh);
+		$entity->{control_behavior}{circuit_enable_disable} = json_bool($circuit_enable_disable);
+		
+		my $circuit_read_resources = read_u8($fh);
+		$entity->{control_behavior}{circuit_read_resources} = json_bool($circuit_read_resources);
+
+		read_unknown($fh, 0x00);
+		
+		my $circuit_resource_read_mode = read_u8($fh);;
+		$entity->{control_behavior}{circuit_resource_read_mode} = $circuit_resource_read_mode;
+
+		read_unknown($fh);
+	}
+
+	ep_modules($fh, $entity, $library);
+	
+	# TODO: Big surprise: Only one trailing zero-byte instead of 5!
+	read_unknown($fh, 0x00);
+}
+
+sub read_offshore_pump_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+	
+	ep_entity_ids($fh, $entity, $library);
+	ep_direction($fh, $entity, $library);
+
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00);
+	
+	# circuit network connections
+	my $has_circuit_connections = read_bool($fh);
+	if($has_circuit_connections){
+		# connections
+		ep_circuit_connections($fh, $entity, $library);
+		
+		# circuit condition & logistic condition
+		ep_conditions($fh, $entity, $library);
+		read_unknown($fh, 0x00, 0x00);
+	}
+	
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
 my %entity_details_handlers = (
 	"inserter" => \&read_entity_inserter_details,
 	"constant-combinator" => \&read_entity_constant_combinator_details,
@@ -907,6 +1006,8 @@ my %entity_details_handlers = (
 	"underground-belt" => \&read_entity_underground_belt_details,
 	"splitter" => \&read_entity_splitter_details,
 	"electric-pole" => \& read_electric_pole_details,
+	"mining-drill" => \&read_mining_drill_details,
+	"offshore-pump" => \&read_offshore_pump_details,
 );
 
 # parameter:
