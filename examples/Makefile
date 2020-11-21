@@ -14,6 +14,7 @@ parsable_dats = \
 	bps-books.dat \
 	bps-planner.dat \
 	bps-planner-ids.dat \
+	bps-belts.dat \
 
 unparsable_dats = \
 	bps-most-buildings.dat \

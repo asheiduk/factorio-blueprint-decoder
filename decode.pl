@@ -503,7 +503,7 @@ sub ep_conditions(*$$){
 	}
 }
 
-sub ep_mode_of_operation(*$$){
+sub ep_mode_of_operation_inserter(*$$){
 	my $fh = shift;
 	my $entity = shift;
 	my $library = shift;
@@ -587,7 +587,7 @@ sub read_entity_inserter_details(*$$){
 		read_unknown($fh, 0x00, 0x00);
 
 		# mode of operation
-		ep_mode_of_operation($fh, $entity, $library);
+		ep_mode_of_operation_inserter($fh, $entity, $library);
 	}
 	
 	# item filters
@@ -774,6 +774,106 @@ sub read_entity_pipe_to_ground_details(*$$){
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
 
+sub read_entity_transport_belt_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	ep_entity_ids($fh, $entity, $library);
+	ep_direction($$fh, $entity, $library);
+
+	# circuit network connections
+	my $has_circuit_connections = read_bool($fh);
+	if($has_circuit_connections){
+	
+		# connections
+		ep_circuit_connections($fh, $entity, $library);
+		
+		# circuit condition & logistic condition
+		ep_conditions($fh, $entity, $library);
+		read_unknown($fh, 0x00, 0x00);
+
+		# mode of operation (specific for transport-belt)
+		# maybe helpfull: https://lua-api.factorio.com/latest/defines.html#defines.control_behavior
+		my $circuit_enable_disable = read_bool($fh);
+		$entity->{control_behavior}{circuit_enable_disable} = json_bool($circuit_enable_disable);
+		
+		my $circuit_read_hand_contents = read_bool($fh);
+		$entity->{control_behavior}{circuit_read_hand_contents} = json_bool($circuit_read_hand_contents);
+		
+		my $circuit_contents_read_mode = read_u8($fh);
+		$entity->{control_behavior}{circuit_contents_read_mode} = $circuit_contents_read_mode;
+
+		# really strange stuff
+		read_unknown($fh, 0xff, 0xff, 0xff, 0xff);
+		read_unknown($fh, 0xff, 0xff, 0xff, 0xff);
+	}
+
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
+sub read_entity_underground_belt_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	read_unknown($fh);
+	ep_direction($$fh, $entity, $library);
+	my $is_output = read_bool($fh);
+	if($is_output){
+		$entity->{type} = "output";
+	}
+	else {
+		$entity->{type} = "input";
+	}
+	
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
+sub read_entity_splitter_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	read_unknown($fh);
+	ep_direction($$fh, $entity, $library);
+
+	my $priorities = read_u8($fh);
+
+	# "explanation": masks
+	# => 0x10	-> output prio enabled
+	# => 0x20	-> input priority enabled
+	# => 0x0c	-> input priority left
+	# => 0x03	-> output priority left
+	# strange thing: why two bits for both 0x0c and 0x03?
+
+	my %priority_mapping = (
+		0x00 => [undef, undef],
+		0x10 => [undef, "right"],
+		0x13 => [undef, "left"],
+		0x20 => ["right", undef],
+		0x2c => ["left", undef],
+		0x30 => ["right", "right"],
+		0x33 => ["right", "left"],
+		0x3c => ["left", "right"],
+		0x3f => ["left", "left"]
+	);
+	my $mapped_priority = $priority_mapping{$priorities};;
+	croak sprintf "unexpected splitter priority code 0x%02x", $priorities unless $mapped_priority;
+	my ($input_priority, $output_priority) = @$mapped_priority;
+
+	$entity->{input_priority} = $input_priority if $input_priority;
+	$entity->{output_priority} = $output_priority if $output_priority;
+	
+	my $filter_id = read_u16($fh);
+	if($filter_id){
+		my $filter_name = get_name($library, Index::ITEM, $filter_id);
+		$entity->{filter} = $filter_name;
+	}
+	
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
 my %entity_details_handlers = (
 	"inserter" => \&read_entity_inserter_details,
 	"constant-combinator" => \&read_entity_constant_combinator_details,
@@ -782,6 +882,9 @@ my %entity_details_handlers = (
 	"infinity-container" => \&read_entity_infinity_container_details,
 	"pipe" => \&read_entity_pipe_details,
 	"pipe-to-ground" => \&read_entity_pipe_to_ground_details,
+	"transport-belt" => \&read_entity_transport_belt_details,
+	"underground-belt" => \&read_entity_underground_belt_details,
+	"splitter" => \&read_entity_splitter_details,
 );
 
 # parameter:
@@ -1260,6 +1363,13 @@ sub get_name($$$){
 	my $result = $library->{prototypes}->name($kind, $id);
 	croak sprintf "##### unknown thing: kind: %s, id: %04x", $kind, $id unless $result;
 	return $result;
+}
+
+sub json_bool($){
+	my $arg = shift;
+	return undef unless defined $arg;
+	return JSON::true if $arg;
+	return JSON::false;
 }
 
 ################################################################
