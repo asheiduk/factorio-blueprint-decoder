@@ -4,6 +4,7 @@ use strict;
 use warnings;
 use JSON;
 use Carp;
+use POSIX qw(strftime);
 
 # maybe helpfull: https://wiki.factorio.com/Data_types
 # maybe helpfull: https://wiki.factorio.com/Types/Direction
@@ -1069,9 +1070,18 @@ sub read_blueprint_library(*){
 	$result->{prototypes} = bp_prototype_index($fh);
 
 	read_unknown($fh, 0x00, 0x00);
-	read_ignore($fh, 1); # a small generation/save/copy counter?
-	read_unknown($fh, 0x00, 0x00, 0x00);
-	read_ignore($fh, 4); # u32 unix timestamp
+	
+	# Adding a blueprint and saving increments the counter, deleting and saving does not.
+	my $counter = read_u32($fh);
+	printf "counter: %d\n", $counter;
+	$result->{_counter_} = $counter;
+
+	# unix timestamp
+	my $timestamp = read_u32($fh); 	# u32/s32?
+	my $timestring = strftime "%FT%T%z", localtime $timestamp;  # localtime/gmtime?
+	printf "timestamp: %s\n", $timestring;
+	$result->{_save_timestamp_} = $timestring;
+
 	read_unknown($fh, 0x01);
 
 	bp_blueprints($fh, $result, $result);
