@@ -5,10 +5,21 @@ use warnings;
 use JSON;
 use Carp;
 use POSIX qw(strftime);
+use Getopt::Std;
 
 # maybe helpfull: https://wiki.factorio.com/Data_types
 # maybe helpfull: https://wiki.factorio.com/Types/Direction
 
+
+our $opt_x = 0; 	# extended output: add voluminous stuff found in
+					# .dat but not used in .export. Currently:
+					#   - migrations (occur in every BP and BP book)
+					#   - prototype index
+
+our $opt_v = 0; 	# verbose output on STDERR
+our $opt_d = 0;     # debug output on STDERR
+
+getopts("xdv");
 
 ################################################################
 ################################################################
@@ -177,6 +188,9 @@ sub _map_class_to_kind($$){
 sub TO_JSON($){
 	my $self = shift or croak;
 
+	# FIXME: This still generates "prototypes: null" instead of just nothing.
+	return undef unless $opt_x;
+
 	my %copy = ( %$self );
 	for(keys %copy){
 		delete $copy{$_} unless %{$copy{$_}};
@@ -188,6 +202,20 @@ sub TO_JSON($){
 ################################################################
 
 package main;
+
+################################################################
+#
+# utilities
+
+sub verbose {
+	return unless $opt_v || $opt_d;
+	printf STDERR @_;
+}
+
+sub debug {
+	return unless $opt_d;
+	printf STDERR @_;
+}
 
 ################################################################
 #
@@ -267,7 +295,6 @@ sub read_unknown(*@){
 	if( @_ ){
 		for my $expected (@_) {
 			my $b = read_u8($fh);
-#			printf "# exp: %02x, read: %02x\n", $expected, $b;
 			$b == $expected or croak sprintf "expected 0x%02x but got 0x%02x at position 0x%x", $expected, $b, tell($fh)-1;
 		}
 	}
@@ -285,7 +312,7 @@ sub read_ignore(*$){
 	my $file_position = tell($fh);
 	read $fh, my ($data), $length;
 
-	printf "#\tignored @%04x: %s\n",
+	debug "#\tignored @%04x: %s\n",
 		$file_position, join " ",
 		map{ sprintf "%02x", $_ } unpack "C*", $data;
 	
@@ -437,7 +464,7 @@ sub ep_entity_ids(*$$){
 			push @entity_ids, read_u32($fh);
 		}
 		$entity->{entity_ids} = \@entity_ids;
-		printf "\tentity-ids: %s\n", join(", ", @entity_ids);
+		debug "\tentity-ids: %s\n", join(", ", @entity_ids);
 		# TODO: in export "entity_"number" but "entity_id" in references.
 		# Also: EACH entity in the export has the number and entities are
 		# numbered 1..N. And there is only one - not an array.
@@ -631,7 +658,7 @@ sub ep_turret_common(*$$){
 	# 00 00 00 3f = 0.5f  -> South
 	# 00 00 40 3f = 0.75f -> West
 	my $f2 = read_f32($fh);
-	printf "#\tignored orientation %g\n", $f2;
+	debug "#\tignored orientation %g\n", $f2;
 }
 
 sub ep_railway_vehicle_common(*$$){
@@ -2031,7 +2058,7 @@ sub read_entity(*$$$$){
 	# position
 	my ($x, $y) = read_position($fh, $last_x, $last_y);
 
-	printf "    [%d] \@%04x - x: %g, y: %g, '%s/%s'\n", $entity_index, $file_offset, $x, $y, $type_class, $type_name;
+	debug "    [%d] \@%04x - x: %g, y: %g, '%s/%s'\n", $entity_index, $file_offset, $x, $y, $type_class, $type_name;
 	my $entity = {
 		name => $type_name,
 		position => {
@@ -2068,7 +2095,7 @@ sub bp_version(*$$){
 	for(1..4){
 		push @version, read_u16($fh);
 	}
-	printf "version: %s\n", join ".", @version;
+	debug "version: %s\n", join ".", @version;
 	$result->{version} = \@version;
 }
 
@@ -2079,15 +2106,15 @@ sub bp_migrations(*$$){
 
 	my @migrations;
 	my $count = read_count8($fh);
-	printf "migrations: %d\n", $count;
+	debug "migrations: %d\n", $count if $opt_x;
 	for(my $i=0; $i<$count; ++$i){
 		my $mod_name = read_string($fh);
 		my $migration_file = read_string($fh);
-		printf "    [%d] mod '%s', migration '%s'\n", $i, $mod_name, $migration_file;
+		debug "    [%d] mod '%s', migration '%s'\n", $i, $mod_name, $migration_file if $opt_x;
 		push @migrations, { mod_name => $mod_name, migration_file => $migration_file }
 	}
 	
-	$result->{migrations} = \@migrations;
+	$result->{migrations} = \@migrations if $opt_x;
 }
 
 sub bp_prototype_index(*){
@@ -2095,29 +2122,29 @@ sub bp_prototype_index(*){
 	my $result = Index->new;
 	
 	my $class_count = read_count16($fh);
-	printf "used prototype classes: %d\n", $class_count;
+	debug "used prototype classes: %d\n", $class_count;
 	for(my $c=0; $c<$class_count; ++$c){
 	
 		my $class_name = read_string($fh);
 		my $proto_count = read_count8($fh);
 		
 		if( $class_name eq "tile" ){		# TODO: strange exception
-			printf "    [%d] class '%s' - entries: %d\n", $c, $class_name, $proto_count;
+			debug "    [%d] class '%s' - entries: %d\n", $c, $class_name, $proto_count;
 			for(my $p=0; $p<$proto_count; ++$p){
 				my $proto_id = read_u8($fh);
 				my $proto_name = read_string($fh);
-				printf "        [%d] %02x '%s'\n", $p, $proto_id, $proto_name;
+				debug "        [%d] %02x '%s'\n", $p, $proto_id, $proto_name;
 				$result->add($proto_id, $class_name, $proto_name);
 #				$result->{$kind_name."/".$proto_name} = $proto_id;
 			}
 		}
 		else {
-			printf "    [%d] class '%s' - entries: %d\n", $c, $class_name, $proto_count;
+			debug "    [%d] class '%s' - entries: %d\n", $c, $class_name, $proto_count;
 			read_unknown($fh); 		# TODO: another strange exception: data between count and list
 			for(my $p=0; $p<$proto_count; ++$p){
 				my $proto_id = read_u16($fh);
 				my $proto_name = read_string($fh);
-				printf "        [%d] %04x '%s'\n", $p, $proto_id, $proto_name;
+				debug "        [%d] %04x '%s'\n", $p, $proto_id, $proto_name;
 				$result->add($proto_id, $class_name, $proto_name);
 #				$result->{$cat_name."/".$entry_name} = $entry_id;
 			}
@@ -2132,7 +2159,7 @@ sub bp_entities(*$$){
 	my $result = shift;
 	
 	my $entity_count = read_count32($fh);
-	printf "entities: %d\n", $entity_count;
+	debug "entities: %d\n", $entity_count;
 	my ($last_x, $last_y) = (0, 0);
 	for(my $e=0; $e<$entity_count; ++$e){
 		my $entity = read_entity($fh, $library, $e, $last_x, $last_y);
@@ -2221,7 +2248,7 @@ sub bp_tiles(*$$){
 	my $result = shift;
 	
 	my $tile_count = read_count32($fh);
-	printf "tiles: %d\n", $tile_count;
+	debug "tiles: %d\n", $tile_count;
 	for(my $t=0; $t<$tile_count; ++$t){
 		my $x = read_s32($fh);
 		my $y = read_s32($fh);
@@ -2244,16 +2271,16 @@ sub bp_icons(*$$){
 
 	my $icon_count = read_count8($fh);
 	if($icon_count>0){
-		printf "icons: %s\n", $icon_count;
+		debug "icons: %s\n", $icon_count;
 		my @icons;
 		for(my $i=0; $i<$icon_count; ++$i){
 			my $icon = read_signal($fh, $library);
 			if($icon){
-				printf "    [%d] '%s' / '%s'\n", $i, $icon->{type}, $icon->{name};
+				debug "    [%d] '%s' / '%s'\n", $i, $icon->{type}, $icon->{name};
 				push @icons, $icon;
 			}
 			else {
-				printf "    [%d] (none)\n", $i;
+				debug "    [%d] (none)\n", $i;
 				push @icons, undef;
 			}
 		}
@@ -2274,12 +2301,12 @@ sub bp_blueprints(*$$){
 	my $result = shift;
 	
 	my $blueprint_count = read_count32($fh);
-	printf "\nblueprints: %d\n", $blueprint_count;
+	verbose "\nblueprints: %d\n", $blueprint_count;
 	my @blueprints;
 	for(my $b=0; $b<$blueprint_count; ++$b){
 		my $is_used = read_bool($fh);
 		if($is_used){
-			printf "\n[%d] library slot: used\n", $b;
+			verbose "\n[%d] library slot: used\n", $b;
 			read_ignore($fh, 5); 	# perhaps some generation counter?
 			my $type_id = read_u16($fh);
 			my $type_entry = get_entry($library, Index::ITEM, $type_id);
@@ -2290,7 +2317,7 @@ sub bp_blueprints(*$$){
 			push @blueprints, $handler_result;
 		}
 		else {
-			printf "\n[%d] library slot: free\n", $b;
+			verbose "\n[%d] library slot: free\n", $b;
 			push @blueprints, undef;
 		}
 	}
@@ -2312,7 +2339,7 @@ sub read_upgrade_item(*$){
 	$result->{label} = read_string($fh);
 	$result->{settings}{description} = read_string($fh);
 	
-	printf "upgrade-item '%s'\n", $result->{label};
+	verbose "upgrade-item '%s'\n", $result->{label};
 
 	read_unknown($fh);
 
@@ -2370,7 +2397,7 @@ sub read_deconstruction_item(*$){
 	$result->{label} = read_string($fh);
 	$result->{settings}{description} = read_string($fh);
 
-	printf "deconstruction-item '%s'\n", $result->{label};
+	verbose "deconstruction-item '%s'\n", $result->{label};
 
 	read_unknown($fh);
 	
@@ -2382,7 +2409,7 @@ sub read_deconstruction_item(*$){
 	read_unknown($fh, 0x00);
 	
 	my $entity_filter_count = read_count8($fh);
-	printf "entity-filters: %d\n", $entity_filter_count;
+	debug "entity-filters: %d\n", $entity_filter_count;
 	my @entity_filters;
 	for(my $f=0; $f<$entity_filter_count; ++$f){
 		my $item_id = read_u16($fh);
@@ -2408,7 +2435,7 @@ sub read_deconstruction_item(*$){
 	read_unknown($fh);
 
 	my $tile_filter_count = read_count8($fh);
-	printf "tile-filters: %d\n", $tile_filter_count;
+	debug "tile-filters: %d\n", $tile_filter_count;
 	my @tile_filters;
 	for(my $t=0; $t<$tile_filter_count; ++$t){
 		my $tile_id = read_u8($fh);
@@ -2434,7 +2461,7 @@ sub read_blueprint(*$){
 	
 	$result->{item} = "blueprint";
 	$result->{label} = read_string($fh);
-	printf "blueprint '%s' (@%04x)\n", $result->{label}, $file_position;
+	verbose "blueprint '%s' (@%04x)\n", $result->{label}, $file_position;
 
 	read_unknown($fh, 0x00, 0x00, 0xff);
 	read_ignore($fh, 4); 	# maybe some offset (with previous 0xff an flexible u8/u32 length?)
@@ -2483,7 +2510,7 @@ sub read_blueprint_book(*$){
 	$result->{item} = "blueprint-book";
 	$result->{label} = read_string($fh);
 	
-	printf "blueprint-book '%s' (@%04x)\n", $result->{label}, $file_position;
+	verbose "blueprint-book '%s' (@%04x)\n", $result->{label}, $file_position;
 	
 	$result->{description} = read_string($fh);
 	read_unknown($fh);
@@ -2496,7 +2523,7 @@ sub read_blueprint_book(*$){
 	
 	read_unknown($fh, 0x00);
 
-	printf "end of book '%s' (@%04x)\n", $result->{label}, tell $fh;
+	verbose "end of book '%s' (@%04x)\n", $result->{label}, tell $fh;
 	return $result;
 }
 
@@ -2513,13 +2540,13 @@ sub read_blueprint_library(*){
 	
 	# Adding a blueprint and saving increments the counter, deleting and saving does not.
 	my $counter = read_u32($fh);
-	printf "counter: %d\n", $counter;
+	debug "counter: %d\n", $counter;
 	$result->{_counter_} = $counter;
 
 	# unix timestamp
 	my $timestamp = read_u32($fh); 	# u32/s32?
 	my $timestring = strftime "%FT%T%z", localtime $timestamp;  # localtime/gmtime?
-	printf "timestamp: %s\n", $timestring;
+	debug "timestamp: %s\n", $timestring;
 	$result->{_save_timestamp_} = $timestring;
 
 	read_unknown($fh, 0x01);
@@ -2572,18 +2599,18 @@ sub dump_trailing_data(*){
 
 	$count = read $fh, $data, 1;
 	if( $count > 0 ){
-		printf "unparsed data:\n";
+		verbose "unparsed data:\n";
 		while( $count > 0 ){
-			printf "%02x ", unpack("C", $data);
+			verbose "%02x ", unpack("C", $data);
 			$count = read $fh, $data, 1;
 		}
-		printf "\n";
+		verbose "\n";
 	}
 }
 
 
 my $file = $ARGV[0] || "blueprint-storage.dat";
-printf "file: %s\n", $file;
+verbose "file: %s\n", $file;
 open(my $fh, "<", $file) or die;
 my $library = read_blueprint_library($fh);
 print to_json($library, {pretty => 1, convert_blessed => 1, canonical => 1});

@@ -1,3 +1,4 @@
+.DELETE_ON_ERROR:
 
 parsable_dats = \
 	bps-inserters.dat \
@@ -48,13 +49,11 @@ json: $(exports:.export=.json)
 test: $(parsable_dats:.dat=.out)
 
 clean:
-	-rm -f *.out
+	-rm -f *.out *.err
 	-rm -f *.json
-	-rm -f *.tst
 
 %.json: %.export
 	../decode-export-string < $< | jq -S . > $@
 
-%.out: %.dat
-	../decode.pl $< > $*.tst
-	mv $*.tst $@
+%.out %.err: %.dat
+	../decode.pl -dx $< > $*.out 2> $*.err
