@@ -1014,6 +1014,17 @@ sub read_assembling_machine_details(*$$){
 	read_unknown($fh, 0x00);
 }
 
+sub read_X_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	# ...
+	# dump_trailing_data($fh);
+	
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
 my %entity_details_handlers = (
 	"inserter" => \&read_entity_inserter_details,
 	"constant-combinator" => \&read_entity_constant_combinator_details,
