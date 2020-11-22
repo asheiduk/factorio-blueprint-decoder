@@ -994,6 +994,26 @@ sub read_offshore_pump_details(*$$){
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
 
+sub read_assembling_machine_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	read_unknown($fh);
+	my $recipe_id = read_u16($fh);
+	if($recipe_id){
+		my $recipe_name = get_name($library, Index::RECIPE, $recipe_id);
+		$entity->{recipe} = $recipe_name;
+	}
+
+	ep_direction($fh, $entity, $library);
+
+	ep_modules($fh, $entity, $library);
+	
+	# TODO: Big surprise: Only one trailing zero-byte instead of 5!
+	read_unknown($fh, 0x00);
+}
+
 my %entity_details_handlers = (
 	"inserter" => \&read_entity_inserter_details,
 	"constant-combinator" => \&read_entity_constant_combinator_details,
@@ -1008,6 +1028,7 @@ my %entity_details_handlers = (
 	"electric-pole" => \& read_electric_pole_details,
 	"mining-drill" => \&read_mining_drill_details,
 	"offshore-pump" => \&read_offshore_pump_details,
+	"assembling-machine" => \&read_assembling_machine_details,
 );
 
 # parameter:
