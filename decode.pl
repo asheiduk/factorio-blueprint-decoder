@@ -1014,6 +1014,17 @@ sub read_assembling_machine_details(*$$){
 	read_unknown($fh, 0x00);
 }
 
+sub read_furnace_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	ep_modules($fh, $entity, $library);
+	# TODO: Big surprise: Only one trailing zero-byte instead of 5!
+	read_unknown($fh);
+}
+
 sub read_X_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
@@ -1040,6 +1051,7 @@ my %entity_details_handlers = (
 	"mining-drill" => \&read_mining_drill_details,
 	"offshore-pump" => \&read_offshore_pump_details,
 	"assembling-machine" => \&read_assembling_machine_details,
+	"furnace" => \&read_furnace_details,
 );
 
 # parameter:
