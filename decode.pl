@@ -1025,6 +1025,50 @@ sub read_furnace_details(*$$){
 	read_unknown($fh);
 }
 
+sub read_storage_tank_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	ep_entity_ids($fh, $entity, $library);
+	ep_direction($fh, $entity, $library);
+	
+	# circuit network connections
+	my $has_circuit_connections = read_bool($fh);
+	if($has_circuit_connections){
+		# connections
+		ep_circuit_connections($fh, $entity, $library);
+	}
+	
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
+sub read_pump_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	ep_entity_ids($fh, $entity, $library);
+	ep_direction($fh, $entity, $library);
+
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x01, 0x00, 0x00, 0x00, 0x01);
+	
+	my $has_circuit_connections = read_bool($fh);
+	if($has_circuit_connections){
+		# connections
+		ep_circuit_connections($fh, $entity, $library);
+		
+		# circuit condition & logistic condition
+		ep_conditions($fh, $entity, $library);
+		read_unknown($fh, 0x00, 0x00);
+	}
+	
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
 sub read_X_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
@@ -1052,6 +1096,8 @@ my %entity_details_handlers = (
 	"offshore-pump" => \&read_offshore_pump_details,
 	"assembling-machine" => \&read_assembling_machine_details,
 	"furnace" => \&read_furnace_details,
+	"storage-tank" => \&read_storage_tank_details,
+	"pump" => \&read_pump_details,
 );
 
 # parameter:

@@ -19,6 +19,7 @@ parsable_dats = \
 	bps-mining.dat \
 	bps-assembler.dat \
 	bps-furnaces.dat \
+	bps-tanks-pumps.dat \
 
 unparsable_dats = \
 	bps-most-buildings.dat \
