@@ -21,6 +21,7 @@ parsable_dats = \
 	bps-furnaces.dat \
 	bps-tanks-pumps.dat \
 	bps-rails.dat \
+	bps-rail-signals.dat \
 
 unparsable_dats = \
 	bps-most-buildings.dat \

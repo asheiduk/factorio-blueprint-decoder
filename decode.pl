@@ -1107,6 +1107,79 @@ sub read_curved_rail_details(*$$){
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
 
+sub read_rail_signal_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	ep_entity_ids($fh, $entity, $library);
+	ep_direction($fh, $entity, $library);
+	
+	my $has_circuit_connections = read_bool($fh);
+	if($has_circuit_connections){
+		# connections
+		ep_circuit_connections($fh, $entity, $library);
+
+		# 
+		my $circuit_close_signal = read_bool($fh);
+		$entity->{control_behavior}{circuit_close_signal} = json_bool($circuit_close_signal);
+		
+		my $circuit_read_signal = read_bool($fh);
+		$entity->{control_behavior}{circuit_read_signal} = json_bool($circuit_read_signal);
+
+		my $encode_color_signal = sub {
+			my $default = shift;
+			my $key = shift;
+
+			my $value = read_type_and_name($fh, $library);
+			if($value && $value->{type} eq "virtual" && $value->{name} ne $default){
+				$entity->{control_behavior}{$key} = $value;
+			}
+		};
+		
+		$encode_color_signal->("signal-red", "red_output_signal");
+		$encode_color_signal->("signal-yellow", "orange_output_signal");
+		$encode_color_signal->("signal-green", "green_output_signal");
+		
+		ep_circuit_condition($fh, $entity, $library);
+		read_unknown($fh);
+	}
+	
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
+sub read_rail_chain_signal_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	ep_entity_ids($fh, $entity, $library);
+	ep_direction($fh, $entity, $library);
+
+	my $has_circuit_connections = read_bool($fh);
+	if($has_circuit_connections){
+		# connections
+		ep_circuit_connections($fh, $entity, $library);
+
+		# signals
+		my $encode_color_signal = sub {
+			my $default = shift;
+			my $key = shift;
+
+			my $value = read_type_and_name($fh, $library);
+			if($value && $value->{type} eq "virtual" && $value->{name} ne $default){
+				$entity->{control_behavior}{$key} = $value;
+			}
+		};
+		$encode_color_signal->("signal-red", "red_output_signal");
+		$encode_color_signal->("signal-yellow", "orange_output_signal");
+		$encode_color_signal->("signal-green", "green_output_signal");
+		$encode_color_signal->("signal-blue", "blue_output_signal");
+	}
+	
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
 sub read_X_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
@@ -1138,6 +1211,8 @@ my %entity_details_handlers = (
 	"pump" => \&read_pump_details,
 	"straight-rail" => \&read_straight_rail_details,
 	"curved-rail" => \&read_curved_rail_details,
+	"rail-signal" => \&read_rail_signal_details,
+	"rail-chain-signal" => \&read_rail_chain_signal_details,
 );
 
 # parameter:
