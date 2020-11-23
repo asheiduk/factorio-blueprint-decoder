@@ -1180,6 +1180,54 @@ sub read_rail_chain_signal_details(*$$){
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
 
+sub read_train_stop_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	ep_entity_ids($fh, $entity, $library);
+	
+	my $station = read_string($fh);
+	$entity->{station} = $station if $station;
+
+	ep_direction($fh, $entity, $library);
+	
+	my $has_circuit_connections = read_bool($fh);
+	if($has_circuit_connections){
+		# connections
+		ep_circuit_connections($fh, $entity, $library);
+		
+		# circuit condition & logistic condition
+		ep_circuit_condition($fh, $entity, $library);
+		ep_logistic_condition($fh, $entity, $library);
+
+		read_unknown($fh, 0x00, 0x00);
+
+		my $circuit_enable_disable = read_bool($fh);
+		my $send_to_train = read_bool($fh);
+		my $read_from_train = read_bool($fh);
+		my $read_stopped_train = read_bool($fh);
+
+		$entity->{control_behavior}{read_from_train} = JSON::true if $read_from_train;
+		$entity->{control_behavior}{circuit_enable_disable} = JSON::true if $circuit_enable_disable;
+
+		# "true" is the silent default
+		$entity->{control_behavior}{send_to_train} = JSON::false unless $send_to_train;
+
+		# Why two flags (read_stopped_train and train_stopped_flag)?
+		$entity->{control_behavior}{read_stopped_train} = JSON::true if $read_stopped_train;
+		my $train_stopped_flag = read_bool($fh);
+		my $train_stopped_signal = read_type_and_name($fh, $library);
+		if($train_stopped_flag){
+			$entity->{control_behavior}{train_stopped_signal} = $train_stopped_signal;
+		}
+		
+		read_unknown($fh, 0x00, 0x00, 0x00, 0x00);
+	}
+	
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
 sub read_X_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
@@ -1213,6 +1261,7 @@ my %entity_details_handlers = (
 	"curved-rail" => \&read_curved_rail_details,
 	"rail-signal" => \&read_rail_signal_details,
 	"rail-chain-signal" => \&read_rail_chain_signal_details,
+	"train-stop" => \&read_train_stop_details,
 );
 
 # parameter:
