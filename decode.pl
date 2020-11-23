@@ -328,6 +328,40 @@ sub read_delta_position(*){
 	}
 }
 
+# circuit condition & logistic condition
+sub read_condition(*$){
+	my $fh = shift;
+	my $library = shift;
+	
+	my %condition;
+	
+	my $comparator_index = read_u8($fh); # default: 0x01
+	my @comparators = (">", "<", "=", "≥", "≤", "≠"); 	# same order in drop-down
+	my $comparator = $comparators[$comparator_index];
+	croak sprintf "unexpected comparator index 0x%02x", $comparator_index unless $comparator;
+
+	my $first_signal = read_type_and_name($fh, $library);
+	my $second_signal = read_type_and_name($fh, $library);
+
+	my $constant = read_s32($fh);
+	my $use_constant = read_bool($fh);
+
+	# hide "default" condition
+	return undef unless $first_signal || $comparator ne "<" || $second_signal || $constant;
+	
+	$condition{first_signal} = $first_signal;
+	$condition{comparator} = $comparator;
+	# The export does not output data if it is hidden in the UI.
+	if($use_constant){
+		$condition{constant} = $constant;
+	}
+	else {
+		$condition{second_signal} = $second_signal;
+	}
+
+	return \%condition;
+}
+
 ################################################################
 #
 # mid level parsing -- with Index
@@ -453,46 +487,22 @@ sub ep_circuit_connections(*$$){
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
 
-sub ep_conditions(*$$){
+sub ep_circuit_condition(*$$){
 	my $fh = shift;
 	my $entity = shift;
 	my $library = shift;
 	
-	# circuit condition & logistic condition
-	my $parser = sub {
-		my $condition_name = shift;
-		my %condition;
-		
-		my $comparator_index = read_u8($fh); # default: 0x01
-		my @comparators = (">", "<", "=", "≥", "≤", "≠"); 	# same order in drop-down
-		my $comparator = $comparators[$comparator_index];
-		croak sprintf "unexpected comparator index 0x%02x", $comparator_index unless $comparator;
+	my $circuit_condition = read_condition($fh, $library);
+	$entity->{control_behavior}{circuit_condition} = $circuit_condition if $circuit_condition;
+}
 
-		my $first_signal = read_type_and_name($fh, $library);
-		my $second_signal = read_type_and_name($fh, $library);
+sub ep_logistic_condition(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
 
-		my $constant = read_s32($fh);
-		my $use_constant = read_bool($fh);
-
-		# hide "default" condition
-		if($first_signal || $comparator ne "<" || $second_signal || $constant){
-			$condition{first_signal} = $first_signal;
-			$condition{comparator} = $comparator;
-			# The export does not output data if it is hidden in the UI.
-			if($use_constant){
-				$condition{constant} = $constant;
-			}
-			else {
-				$condition{second_signal} = $second_signal;
-			}
-		}
-		
-		$entity->{control_behavior}{$condition_name} = \%condition if %condition;
-		
-	};
-
-	$parser->("circuit_condition");
-	$parser->("logistic_condition");
+	my $logistic_condition = read_condition($fh, $library);
+	$entity->{control_behavior}{logistic_condition} = $logistic_condition if $logistic_condition;
 	
 	my $logistic_connected = read_bool($fh);
 	if($logistic_connected){
@@ -604,7 +614,8 @@ sub read_entity_inserter_details(*$$){
 		ep_circuit_connections($fh, $entity, $library);
 		
 		# circuit condition & logistic condition
-		ep_conditions($fh, $entity, $library);
+		ep_circuit_condition($fh, $entity, $library);
+		ep_logistic_condition($fh, $entity, $library);
 		read_unknown($fh, 0x00, 0x00);
 
 		# mode of operation
@@ -811,7 +822,8 @@ sub read_entity_transport_belt_details(*$$){
 		ep_circuit_connections($fh, $entity, $library);
 		
 		# circuit condition & logistic condition
-		ep_conditions($fh, $entity, $library);
+		ep_circuit_condition($fh, $entity, $library);
+		ep_logistic_condition($fh, $entity, $library);
 		read_unknown($fh, 0x00, 0x00);
 
 		# mode of operation (specific for transport-belt)
@@ -943,7 +955,8 @@ sub read_mining_drill_details(*$$){
 		ep_circuit_connections($fh, $entity, $library);
 		
 		# circuit condition & logistic condition
-		ep_conditions($fh, $entity, $library);
+		ep_circuit_condition($fh, $entity, $library);
+		ep_logistic_condition($fh, $entity, $library);
 		read_unknown($fh, 0x00, 0x00);
 
 		# mode of operation (specific for mining_drill)
@@ -987,7 +1000,8 @@ sub read_offshore_pump_details(*$$){
 		ep_circuit_connections($fh, $entity, $library);
 		
 		# circuit condition & logistic condition
-		ep_conditions($fh, $entity, $library);
+		ep_circuit_condition($fh, $entity, $library);
+		ep_logistic_condition($fh, $entity, $library);
 		read_unknown($fh, 0x00, 0x00);
 	}
 	
@@ -1062,7 +1076,8 @@ sub read_pump_details(*$$){
 		ep_circuit_connections($fh, $entity, $library);
 		
 		# circuit condition & logistic condition
-		ep_conditions($fh, $entity, $library);
+		ep_circuit_condition($fh, $entity, $library);
+		ep_logistic_condition($fh, $entity, $library);
 		read_unknown($fh, 0x00, 0x00);
 	}
 	
