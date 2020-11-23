@@ -1087,6 +1087,26 @@ sub read_pump_details(*$$){
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
 
+sub read_straight_rail_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	read_unknown($fh);
+	ep_direction($fh, $entity, $library);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
+sub read_curved_rail_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	read_unknown($fh);
+	ep_direction($fh, $entity, $library);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
 sub read_X_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
@@ -1116,6 +1136,8 @@ my %entity_details_handlers = (
 	"furnace" => \&read_furnace_details,
 	"storage-tank" => \&read_storage_tank_details,
 	"pump" => \&read_pump_details,
+	"straight-rail" => \&read_straight_rail_details,
+	"curved-rail" => \&read_curved_rail_details,
 );
 
 # parameter:
