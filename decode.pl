@@ -561,7 +561,7 @@ sub ep_filters(*$$){
 	}
 }
 
-sub ep_modules(*$$){
+sub ep_items(*$$){
 	my $fh = shift;
 	my $entity = shift;
 	my $library = shift;
@@ -977,7 +977,8 @@ sub read_mining_drill_details(*$$){
 		read_unknown($fh);
 	}
 
-	ep_modules($fh, $entity, $library);
+	# modules
+	ep_items($fh, $entity, $library);
 	
 	# TODO: Big surprise: Only one trailing zero-byte instead of 5!
 	read_unknown($fh, 0x00);
@@ -1022,7 +1023,8 @@ sub read_assembling_machine_details(*$$){
 
 	ep_direction($fh, $entity, $library);
 
-	ep_modules($fh, $entity, $library);
+	# modules
+	ep_items($fh, $entity, $library);
 	
 	# TODO: Big surprise: Only one trailing zero-byte instead of 5!
 	read_unknown($fh, 0x00);
@@ -1034,7 +1036,8 @@ sub read_furnace_details(*$$){
 	my $library = shift;
 
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
-	ep_modules($fh, $entity, $library);
+	# modules
+	ep_items($fh, $entity, $library);
 	# TODO: Big surprise: Only one trailing zero-byte instead of 5!
 	read_unknown($fh);
 }
