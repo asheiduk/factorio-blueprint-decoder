@@ -31,6 +31,7 @@ parsable_dats = \
 	bps-speakers.dat \
 	bps-power-switch.dat \
 	bps-switch+combinator.dat \
+	bps-turrets.dat \
 
 unparsable_dats = \
 	bps-most-buildings.dat \
