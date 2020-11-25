@@ -1228,6 +1228,76 @@ sub read_train_stop_details(*$$){
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
 
+sub read_generator_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
+	ep_direction($fh, $entity, $library);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
+sub read_reactor_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
+sub read_boiler_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	read_unknown($fh);
+	ep_direction($fh, $entity, $library);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
+sub read_solar_panel_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
+sub read_accumulator_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	ep_entity_ids($fh, $entity, $library);
+
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+
+	my $has_circuit_connections = read_bool($fh);
+	if($has_circuit_connections){
+		# connections
+		ep_circuit_connections($fh, $entity, $library);
+
+		# output signal
+		my $output_signal = read_type_and_name($fh, $library);
+		$entity->{control_behavior}{output_signal} = $output_signal;
+	}
+	
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
+sub read_heat_pipe_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
 sub read_X_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
@@ -1262,6 +1332,12 @@ my %entity_details_handlers = (
 	"rail-signal" => \&read_rail_signal_details,
 	"rail-chain-signal" => \&read_rail_chain_signal_details,
 	"train-stop" => \&read_train_stop_details,
+	"generator" => \&read_generator_details,
+	"reactor" => \&read_reactor_details,
+	"boiler" => \&read_boiler_details,
+	"solar-panel" => \&read_solar_panel_details,
+	"accumulator" => \&read_accumulator_details,
+	"heat-pipe" => \&read_heat_pipe_details,
 );
 
 # parameter:

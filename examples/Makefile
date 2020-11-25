@@ -23,6 +23,7 @@ parsable_dats = \
 	bps-rails.dat \
 	bps-rail-signals.dat \
 	bps-train-stops.dat \
+	bps-power-entities.dat \
 
 unparsable_dats = \
 	bps-most-buildings.dat \
