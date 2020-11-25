@@ -465,6 +465,8 @@ sub ep_bar(*$$){
 		"logistic-chest-buffer"		=> 0x30,
 		# cheat mode
 		"infinity-chest" => 0x30,
+		# trains
+		"cargo-wagon"	=> 0x28,
 	);
 	my $default_bar = $bar_defaults{$entity->{name}};
 	if( not defined $default_bar or $default_bar != $bar){
@@ -630,6 +632,26 @@ sub ep_turret_common(*$$){
 	# 00 00 40 3f = 0.75f -> West
 	my $f2 = read_f32($fh);
 	printf "#\tignored orientation %g\n", $f2;
+}
+
+sub ep_railway_vehicle_common(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	read_unknown($fh, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x01);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+
+	# 26 22 4f
+	# e7 73 ed
+	# ac d3 65
+	read_ignore($fh, 3);
+	
+	read_unknown($fh, 0x00, 0x00);
 }
 
 sub read_entity_inserter_details(*$$){
@@ -1829,6 +1851,97 @@ sub read_artillery_turret_details(*$$){
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
 
+sub read_locomotive_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	read_unknown($fh, 0x00, 0x00);
+	my $orientation = read_f32($fh);
+	$entity->{orientation} = $orientation if $orientation;
+
+	ep_railway_vehicle_common($fh, $entity, $library);
+	
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+
+	# fuel
+	ep_items($fh, $entity, $library);
+	
+	read_unknown($fh, 0x00);
+}
+
+sub read_cargo_wagon_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	read_unknown($fh, 0x00, 0x00);
+	my $orientation = read_f32($fh);
+	$entity->{orientation} = $orientation if $orientation;
+
+	ep_railway_vehicle_common($fh, $entity, $library);
+
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+
+	ep_filters($fh, $entity, $library);
+	
+	ep_bar($fh, $entity, $library);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
+sub read_fluid_wagon_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	read_unknown($fh, 0x00, 0x00);
+	my $orientation = read_f32($fh);
+	$entity->{orientation} = $orientation if $orientation;
+
+	ep_railway_vehicle_common($fh, $entity, $library);
+
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
+sub read_artillery_wagon_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	read_unknown($fh, 0x00, 0x00);
+	my $orientation = read_f32($fh);
+	$entity->{orientation} = $orientation if $orientation;
+
+	ep_railway_vehicle_common($fh, $entity, $library);
+
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x80, 0x3f); # 1.0f
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0xff, 0x7f); # s16: max. positive value
+	read_unknown($fh, 0xff, 0xff, 0xff, 0x7f); # s32: max. positive value
+	read_unknown($fh, 0xff, 0xff, 0xff, 0x7f); # s32: max. positive value
+
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0xff, 0xff, 0xff, 0x7f); # s32: max. positive value
+	read_unknown($fh, 0xff, 0xff, 0xff, 0x7f); # s32: max. positive value
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x03);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x01, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x80, 0x3f); # 1.0f
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
 sub read_X_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
@@ -1886,6 +1999,10 @@ my %entity_details_handlers = (
 	"electric-turret" => \&read_electric_turret_details,
 	"fluid-turret" => \&read_fluid_turret_details,
 	"artillery-turret" => \&read_artillery_turret_details,
+	"locomotive" => \&read_locomotive_details,
+	"cargo-wagon" => \&read_cargo_wagon_details,
+	"fluid-wagon" => \&read_fluid_wagon_details,
+	"artillery-wagon" => \&read_artillery_wagon_details,
 );
 
 # parameter:

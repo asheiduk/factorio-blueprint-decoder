@@ -33,6 +33,7 @@ parsable_dats = \
 	bps-switch+combinator.dat \
 	bps-turrets.dat \
 	bps-far-away.dat \
+	bps-trains.dat \
 
 unparsable_dats = \
 	bps-most-buildings.dat \
