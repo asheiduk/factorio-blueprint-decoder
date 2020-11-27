@@ -1298,6 +1298,99 @@ sub read_heat_pipe_details(*$$){
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
 
+sub read_land_mine_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	read_unknown($fh, 0x00, 0x78, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
+sub read_wall_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	ep_entity_ids($fh, $entity, $library);
+	read_unknown($fh, 0x00);
+	
+	my $has_circuit_connections = read_bool($fh);
+	if($has_circuit_connections){
+		# connections
+		ep_circuit_connections($fh, $entity, $library);
+
+		my $open_gate = read_bool($fh);
+		$entity->{control_behavior}{circuit_open_gate} = json_bool($open_gate);
+		
+		my $read_sensor = read_bool($fh);
+		$entity->{control_behavior}{circuit_read_sensor} = json_bool($read_sensor);
+		
+		my $output_signal = read_type_and_name($fh, $library);
+		if($output_signal->{type} ne "virtual" || $output_signal->{name} ne "signal-G"){
+			$entity->{control_behavior}{output_signal} = $output_signal;
+		}
+
+		ep_circuit_condition($fh, $entity, $library);
+		read_unknown($fh);
+	}
+	
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
+sub read_gate_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	read_unknown($fh);
+	ep_direction($fh, $entity, $library);
+	
+	read_unknown($fh, 0x00, 0x00, 0x80, 0x3f);
+
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
+sub read_radar_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x9a, 0x99, 0x19, 0x3e, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00);
+}
+
+sub read_rocket_silo_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	read_unknown($fh);
+		
+	my $recipe_id = read_u16($fh);
+	if($recipe_id){
+		my $recipe_name = get_name($library, Index::RECIPE, $recipe_id);
+		$entity->{recipe} = $recipe_name;
+	}
+
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00);
+
+	my $auto_launch = read_bool($fh);
+	$entity->{auto_launch} = JSON::true if $auto_launch;
+	ep_items($fh, $entity, $library);
+	read_unknown($fh);
+}
+
 sub read_X_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
@@ -1338,6 +1431,11 @@ my %entity_details_handlers = (
 	"solar-panel" => \&read_solar_panel_details,
 	"accumulator" => \&read_accumulator_details,
 	"heat-pipe" => \&read_heat_pipe_details,
+	"land-mine" => \&read_land_mine_details,
+	"wall" => \&read_wall_details,
+	"gate" => \&read_gate_details,
+	"radar" => \&read_radar_details,
+	"rocket-silo" => \&read_rocket_silo_details,
 );
 
 # parameter:
