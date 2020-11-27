@@ -387,6 +387,28 @@ sub read_type_and_name(*$){
 	};
 }
 
+sub read_signal_with_default(*$$$){
+	my $fh = shift;
+	my $library = shift;
+	my $default_type = shift or croak;
+	my $default_name = shift or croak;
+
+	my $signal = read_type_and_name($fh, $library);
+	
+	# map undef to an empty signal
+	if(!$signal){
+		return {
+			"type" => "item"
+		};
+	}
+	# map default signal to undef
+	if($default_type eq $signal->{type} && $default_name eq $signal->{name}){
+		return undef;
+	}
+	# pass throug everything else
+	return $signal;
+}
+
 ################################################################
 #
 # entity and entity-parts (ep_)
@@ -1391,6 +1413,72 @@ sub read_rocket_silo_details(*$$){
 	read_unknown($fh);
 }
 
+sub read_beacon_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0);
+	read_unknown($fh, 0x3f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00);
+	ep_items($fh, $entity, $library);
+	read_unknown($fh, 0x00);
+}
+
+sub read_lab_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	ep_items($fh, $entity, $library);
+	read_unknown($fh, 0x00);
+}
+
+sub read_roboport_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	ep_entity_ids($fh, $entity, $library);
+
+	my $has_circuit_connections = read_bool($fh);
+	if($has_circuit_connections){
+		# connections
+		ep_circuit_connections($fh, $entity, $library);
+
+		# flags and signals
+		my $read_logistics = read_bool($fh);
+		$entity->{control_behavior}{read_logistics} = JSON::false unless $read_logistics;
+
+		my $read_robot_stats = read_bool($fh);
+		$entity->{control_behavior}{read_robot_stats} = JSON::true if $read_robot_stats;
+
+		my $available_logistic = read_signal_with_default($fh, $library,
+			"virtual", "signal-X");
+		$entity->{control_behavior}{available_logistic_output_signal} =
+			$available_logistic if $available_logistic && $read_robot_stats;
+
+		my $total_logistic = read_signal_with_default($fh, $library,
+			"virtual", "signal-Y");
+		$entity->{control_behavior}{total_logistic_output_signal} =
+			$total_logistic if $total_logistic && $read_robot_stats;
+
+		my $available_construction = read_signal_with_default($fh, $library,
+			"virtual", "signal-Z");
+		$entity->{control_behavior}{available_construction_output_signal} =
+			$available_construction if $available_construction && $read_robot_stats;
+
+		my $total_construction = read_signal_with_default($fh, $library,
+			"virtual", "signal-T");
+		$entity->{control_behavior}{total_construction_output_signal} =
+			$total_construction if $total_construction && $read_robot_stats;
+	}
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
 sub read_X_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
@@ -1436,6 +1524,9 @@ my %entity_details_handlers = (
 	"gate" => \&read_gate_details,
 	"radar" => \&read_radar_details,
 	"rocket-silo" => \&read_rocket_silo_details,
+	"beacon" => \&read_beacon_details,
+	"lab" => \&read_lab_details,
+	"roboport" => \&read_roboport_details,
 );
 
 # parameter:
