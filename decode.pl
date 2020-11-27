@@ -328,46 +328,11 @@ sub read_delta_position(*){
 	}
 }
 
-# circuit condition & logistic condition
-sub read_condition(*$){
-	my $fh = shift;
-	my $library = shift;
-	
-	my %condition;
-	
-	my $comparator_index = read_u8($fh); # default: 0x01
-	my @comparators = (">", "<", "=", "≥", "≤", "≠"); 	# same order in drop-down
-	my $comparator = $comparators[$comparator_index];
-	croak sprintf "unexpected comparator index 0x%02x", $comparator_index unless $comparator;
-
-	my $first_signal = read_type_and_name($fh, $library);
-	my $second_signal = read_type_and_name($fh, $library);
-
-	my $constant = read_s32($fh);
-	my $use_constant = read_bool($fh);
-
-	# hide "default" condition
-	return undef unless $first_signal || $comparator ne "<" || $second_signal || $constant;
-	
-	$condition{first_signal} = $first_signal;
-	$condition{comparator} = $comparator;
-	# The export does not output data if it is hidden in the UI.
-	if($use_constant){
-		$condition{constant} = $constant;
-	}
-	else {
-		$condition{second_signal} = $second_signal;
-	}
-
-	return \%condition;
-}
-
 ################################################################
 #
 # mid level parsing -- with Index
 
-
-sub read_type_and_name(*$){
+sub read_signal(*$){
 	my $fh = shift;
 	my $library = shift;
 	
@@ -393,7 +358,7 @@ sub read_signal_with_default(*$$$){
 	my $default_type = shift or croak;
 	my $default_name = shift or croak;
 
-	my $signal = read_type_and_name($fh, $library);
+	my $signal = read_signal($fh, $library);
 	
 	# map undef to an empty signal
 	if(!$signal){
@@ -407,6 +372,40 @@ sub read_signal_with_default(*$$$){
 	}
 	# pass throug everything else
 	return $signal;
+}
+
+# circuit condition & logistic condition
+sub read_condition(*$){
+	my $fh = shift;
+	my $library = shift;
+	
+	my %condition;
+	
+	my $comparator_index = read_u8($fh); # default: 0x01
+	my @comparators = (">", "<", "=", "≥", "≤", "≠"); 	# same order in drop-down
+	my $comparator = $comparators[$comparator_index];
+	croak sprintf "unexpected comparator index 0x%02x", $comparator_index unless $comparator;
+
+	my $first_signal = read_signal($fh, $library);
+	my $second_signal = read_signal($fh, $library);
+
+	my $constant = read_s32($fh);
+	my $use_constant = read_bool($fh);
+
+	# hide "default" condition
+	return undef unless $first_signal || $comparator ne "<" || $second_signal || $constant;
+	
+	$condition{first_signal} = $first_signal;
+	$condition{comparator} = $comparator;
+	# The export does not output data if it is hidden in the UI.
+	if($use_constant){
+		$condition{constant} = $constant;
+	}
+	else {
+		$condition{second_signal} = $second_signal;
+	}
+
+	return \%condition;
 }
 
 ################################################################
@@ -552,7 +551,7 @@ sub ep_mode_of_operation_inserter(*$$){
 
 	my $set_stack_size = read_bool($fh);
 	$entity->{control_behavior}{circuit_set_stack_size} = JSON::true if $set_stack_size;
-	my $stack_size_signal = read_type_and_name($fh, $library);
+	my $stack_size_signal = read_signal($fh, $library);
 	if($stack_size_signal){
 		$entity->{control_behavior}{stack_control_input_signal} = $stack_size_signal;
 	}
@@ -667,7 +666,7 @@ sub read_entity_constant_combinator_details(*$$){
 	if($filter_count > 0){
 		my @filters;
 		for(my $f=0; $f<$filter_count; ++$f){
-			my $signal = read_type_and_name($fh, $library);
+			my $signal = read_signal($fh, $library);
 			my $count = read_s32($fh);
 			if($signal){
 				push @filters, {
@@ -1153,7 +1152,7 @@ sub read_rail_signal_details(*$$){
 			my $default = shift;
 			my $key = shift;
 
-			my $value = read_type_and_name($fh, $library);
+			my $value = read_signal($fh, $library);
 			if($value && $value->{type} eq "virtual" && $value->{name} ne $default){
 				$entity->{control_behavior}{$key} = $value;
 			}
@@ -1188,7 +1187,7 @@ sub read_rail_chain_signal_details(*$$){
 			my $default = shift;
 			my $key = shift;
 
-			my $value = read_type_and_name($fh, $library);
+			my $value = read_signal($fh, $library);
 			if($value && $value->{type} eq "virtual" && $value->{name} ne $default){
 				$entity->{control_behavior}{$key} = $value;
 			}
@@ -1239,7 +1238,7 @@ sub read_train_stop_details(*$$){
 		# Why two flags (read_stopped_train and train_stopped_flag)?
 		$entity->{control_behavior}{read_stopped_train} = JSON::true if $read_stopped_train;
 		my $train_stopped_flag = read_bool($fh);
-		my $train_stopped_signal = read_type_and_name($fh, $library);
+		my $train_stopped_signal = read_signal($fh, $library);
 		if($train_stopped_flag){
 			$entity->{control_behavior}{train_stopped_signal} = $train_stopped_signal;
 		}
@@ -1305,7 +1304,7 @@ sub read_accumulator_details(*$$){
 		ep_circuit_connections($fh, $entity, $library);
 
 		# output signal
-		my $output_signal = read_type_and_name($fh, $library);
+		my $output_signal = read_signal($fh, $library);
 		$entity->{control_behavior}{output_signal} = $output_signal;
 	}
 	
@@ -1348,7 +1347,7 @@ sub read_wall_details(*$$){
 		my $read_sensor = read_bool($fh);
 		$entity->{control_behavior}{circuit_read_sensor} = json_bool($read_sensor);
 		
-		my $output_signal = read_type_and_name($fh, $library);
+		my $output_signal = read_signal($fh, $library);
 		if($output_signal->{type} ne "virtual" || $output_signal->{name} ne "signal-G"){
 			$entity->{control_behavior}{output_signal} = $output_signal;
 		}
@@ -1699,7 +1698,7 @@ sub bp_icons(*$$){
 		printf "icons: %s\n", $icon_count;
 		my @icons;
 		for(my $i=0; $i<$icon_count; ++$i){
-			my $icon = read_type_and_name($fh, $library);
+			my $icon = read_signal($fh, $library);
 			if($icon){
 				printf "    [%d] '%s' / '%s'\n", $i, $icon->{type}, $icon->{name};
 				push @icons, $icon;
@@ -1795,7 +1794,7 @@ sub read_upgrade_item(*$){
 	my $mapper_count = read_u8($fh);
 	my @mappers;
 	for(my $m=0; $m<$mapper_count; ++$m){
-		# see read_type_and_name but the types are different :-(
+		# see read_signal but the types are different :-(
 		my $from = $reader->();
 		my $to =$reader->();
 		if( $from || $to ){
