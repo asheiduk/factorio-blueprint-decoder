@@ -26,6 +26,7 @@ parsable_dats = \
 	bps-power-entities.dat \
 	bps-combat-simple.dat \
 	bps-misc.dat \
+	bps-combinators.dat \
 
 unparsable_dats = \
 	bps-most-buildings.dat \

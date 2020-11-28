@@ -479,10 +479,11 @@ sub ep_direction(*$$){
 	}
 }
 
-sub ep_circuit_connections(*$$){
+sub ep_circuit_connections(*$$;$){
 	my $fh = shift;
 	my $entity = shift;
 	my $library = shift;
+	my $own_circuit_id = shift // "1";
 
 	my %connections;
 
@@ -493,18 +494,21 @@ sub ep_circuit_connections(*$$){
 		# TODO: variable length for many connections?
 		my $peer_count = read_count8($fh);
 		for(my $p=0; $p<$peer_count; ++$p){
-			push @peers, read_u32($fh);
-			read_unknown($fh, 0x01, 0xff);
+			my $entity_id = read_u32($fh);
+			my $circuit_id = read_u8($fh);
+			push @peers, {
+				entity_id => $entity_id,
+				# TODO: skip "circuit_id" for "simple" circuits
+				circuit_id => $circuit_id
+			};
+			read_unknown($fh, 0xff);
 		}
 		$connections{$color} = \@peers if @peers;
 	}
 	
-	# TODO: The export has another dict with key '"1"' wegded
-	# between "connections" and ("red"/"green"). Maybe circuit_connector_id
-	# https://lua-api.factorio.com/latest/defines.html#defines.circuit_connector_id
-	$entity->{connections} = \%connections if %connections;
+	# maybe helpfull: https://lua-api.factorio.com/latest/defines.html#defines.circuit_connector_id
+	$entity->{connections}{$own_circuit_id} = \%connections if %connections;
 
-	# TODO
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
 
@@ -1478,6 +1482,111 @@ sub read_roboport_details(*$$){
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
 
+sub read_arithmetic_combinator_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	ep_entity_ids($fh, $entity, $library);
+	ep_direction($fh, $entity, $library);
+
+	# connections
+	ep_circuit_connections($fh, $entity, $library, "1");
+	ep_circuit_connections($fh, $entity, $library, "2");
+
+	# condition
+	my $first_signal = read_signal($fh, $library);
+	my $second_signal = read_signal($fh, $library);
+	my $output_signal = read_signal($fh, $library);
+
+	my $second_constant = read_s32($fh);
+	
+	my $operation_index = read_u8($fh);
+	my @operations = ("*", "/", "+", "-", "%", "^", "<<", ">>", "AND", "OR", "XOR");
+	my $operation = $operations[$operation_index];
+	croak sprintf "unexpected operation index 0x%02x", $operation_index unless $operation;
+
+	my $use_second_constant = read_bool($fh);
+
+	my $first_constant = read_s32($fh);
+	my $use_first_constant = read_bool($fh);
+
+	my $condition = {};
+	$entity->{control_behavior}{arithmetic_conditions} = $condition;
+
+	$condition->{operation} = $operation;
+	
+	if($use_first_constant){
+		$condition->{first_constant} = $first_constant;
+	}
+	elsif($first_signal){
+		$condition->{first_signal} = $first_signal;
+	}
+
+	if($use_second_constant){
+		$condition->{second_constant} = $second_constant;
+	}
+	elsif($second_signal){
+		$condition->{second_signal} = $second_signal;
+	}
+
+	if($output_signal){
+		$condition->{output_signal} = $output_signal;
+	}
+
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
+sub read_decider_combinator_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	ep_entity_ids($fh, $entity, $library);
+	ep_direction($fh, $entity, $library);
+
+	# connections
+	ep_circuit_connections($fh, $entity, $library, "1");
+	ep_circuit_connections($fh, $entity, $library, "2");
+
+	# condition
+	my $first_signal = read_signal($fh, $library);
+	my $second_signal = read_signal($fh, $library);
+	my $output_signal = read_signal($fh, $library);
+	my $second_constant = read_s32($fh);
+	
+	my $comparator_index = read_u8($fh);
+	my @comparators = (">", "<", "=", "≥", "≤", "≠"); 	# same order in drop-down
+	my $comparator = $comparators[$comparator_index];
+	croak sprintf "unexpected comparator index 0x%02x", $comparator_index unless $comparator;
+
+	my $copy_count = read_bool($fh);
+	my $use_constant = read_bool($fh);
+
+	my $condition = {};
+	$entity->{control_behavior}{decider_conditions} = $condition;
+
+	$condition->{comparator} = $comparator;
+	
+	if($first_signal){
+		$condition->{first_signal} = $first_signal;
+	}
+
+	if($use_constant){
+		$condition->{constant} = $second_constant;
+	}
+	elsif($second_signal){
+		$condition->{second_signal} = $second_signal;
+	}
+
+	if($output_signal){
+		$condition->{output_signal} = $output_signal;
+	}
+	$condition->{copy_count_from_input} = json_bool($copy_count);
+
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
 sub read_X_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
@@ -1526,6 +1635,8 @@ my %entity_details_handlers = (
 	"beacon" => \&read_beacon_details,
 	"lab" => \&read_lab_details,
 	"roboport" => \&read_roboport_details,
+	"arithmetic-combinator" => \&read_arithmetic_combinator_details,
+	"decider-combinator" => \& read_decider_combinator_details,
 );
 
 # parameter:
