@@ -1587,6 +1587,30 @@ sub read_decider_combinator_details(*$$){
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
 
+sub read_lamp_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	ep_entity_ids($fh, $entity, $library);
+	my $has_circuit_connections = read_bool($fh);
+	if($has_circuit_connections){
+		# connections
+		ep_circuit_connections($fh, $entity, $library);
+
+		ep_circuit_condition($fh, $entity, $library);
+		ep_logistic_condition($fh, $entity, $library);
+
+		read_unknown($fh, 0x00);
+		read_unknown($fh, 0x00);
+		
+		my $use_colors = read_bool($fh);
+		$entity->{control_behavior}{use_colors} = JSON::true if $use_colors;
+	}
+	
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
 sub read_X_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
@@ -1637,6 +1661,7 @@ my %entity_details_handlers = (
 	"roboport" => \&read_roboport_details,
 	"arithmetic-combinator" => \&read_arithmetic_combinator_details,
 	"decider-combinator" => \& read_decider_combinator_details,
+	"lamp" => \&read_lamp_details,
 );
 
 # parameter:
