@@ -229,6 +229,14 @@ sub read_s32(*){
 	return unpack "l<", $data;
 }
 
+# see https://en.wikipedia.org/wiki/Double-precision_floating-point_format#Double-precision_examples
+# for remarkable examples like "0x3ff0_0000_0000_0000" for "1"
+sub read_f64(*){
+	my $fh = shift;
+	read $fh, my $data, 8 or croak;
+	return unpack "d<", $data;
+}
+
 sub read_bool(*){
 	my $fh = shift;
 	my $b = read_u8($fh);
@@ -1611,6 +1619,61 @@ sub read_lamp_details(*$$){
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
 
+sub read_programmable_speaker_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	ep_entity_ids($fh, $entity, $library);
+
+	my $playback_volume = read_f64($fh);
+	my $playback_globally = read_bool($fh);
+	my $allow_polyphony = read_bool($fh);
+	my $show_alert = read_bool($fh);
+	my $show_on_map = read_bool($fh);
+	
+	$entity->{parameters} = {
+		playback_volume => $playback_volume,
+		playback_globally => json_bool($playback_globally),
+		allow_polyphony => json_bool($allow_polyphony),
+	};
+
+	my $icon_signal_id = read_signal($fh, $library);
+	my $alert_message = read_string($fh);
+
+	$entity->{alert_parameters} = {
+		alert_message => $alert_message,
+		show_alert => json_bool($show_alert),
+		show_on_map => json_bool($show_on_map),
+	};
+	$entity->{alert_parameters}{icon_signal_id} = $icon_signal_id if $icon_signal_id;
+
+	my $has_circuit_connections = read_bool($fh);
+	if($has_circuit_connections){
+		# connections
+		ep_circuit_connections($fh, $entity, $library);
+
+		# condition
+		ep_circuit_condition($fh, $entity, $library);
+
+		my $signal_value_is_pitch = read_bool($fh);
+		
+		my $instrument_id = read_u8($fh);
+		read_unknown($fh, 0x00, 0x00, 0x00); # perhaps u32?
+
+		my $note_id = read_u8($fh);
+		read_unknown($fh, 0x00, 0x00, 0x00); # perhaps u32?
+
+		$entity->{control_behavior}{circuit_parameters} = {
+			instrument_id => $instrument_id,
+			note_id => $note_id,
+			signal_value_is_pitch => json_bool($signal_value_is_pitch),
+		};
+	}
+	
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
 sub read_X_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
@@ -1662,6 +1725,7 @@ my %entity_details_handlers = (
 	"arithmetic-combinator" => \&read_arithmetic_combinator_details,
 	"decider-combinator" => \& read_decider_combinator_details,
 	"lamp" => \&read_lamp_details,
+	"programmable-speaker" => \&read_programmable_speaker_details,
 );
 
 # parameter:
