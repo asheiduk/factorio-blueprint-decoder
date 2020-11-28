@@ -955,8 +955,16 @@ sub read_electric_pole_details(*$$){
 		# connections
 		ep_circuit_connections($fh, $entity, $library);
 	}
-	
-	read_unknown($fh, 0x00);
+
+	# TODO: This applies only to power-switches, but the export
+	# mentions these connections only on the side of the switch.
+	# Normal circuit conenctions are listed in the export on both
+	# sides.
+	my $peer_count = read_count8($fh);
+	for(my $p=0; $p<$peer_count; ++$p){
+		my $peer_id = read_u32($fh);
+		my $circuit_id = read_u8($fh);
+	}
 	
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
@@ -1674,6 +1682,53 @@ sub read_programmable_speaker_details(*$$){
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
 
+sub read_power_switch_details(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+
+	ep_entity_ids($fh, $entity, $library);
+	
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
+
+	# Contrary to circuit-connections there is no counter/list and therefore
+	# at most one wire can connect to each side. On the other hand the
+	# export format has exactly lists in place. *shrug*
+	my $connection_cu0 = read_u32($fh);
+	if($connection_cu0){
+		$entity->{connections}{Cu0} = [
+			{
+				entity_id => $connection_cu0,
+				wire_id => 0
+			}
+		];
+	}
+	my $connection_cu1 = read_u32($fh);
+	if($connection_cu1){
+		$entity->{connections}{Cu1} = [
+			{
+				entity_id => $connection_cu1,
+				wire_id => 0
+			}
+		];
+	}
+		
+	my $has_circuit_connections = read_bool($fh);
+	if($has_circuit_connections){
+		# connections
+		ep_circuit_connections($fh, $entity, $library);
+
+		# condition
+		ep_circuit_condition($fh, $entity, $library);
+		ep_logistic_condition($fh, $entity, $library);
+
+		read_unknown($fh, 0x00, 0x00);
+	}
+		
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
+}
+
 sub read_X_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
@@ -1726,6 +1781,7 @@ my %entity_details_handlers = (
 	"decider-combinator" => \& read_decider_combinator_details,
 	"lamp" => \&read_lamp_details,
 	"programmable-speaker" => \&read_programmable_speaker_details,
+	"power-switch" => \&read_power_switch_details,
 );
 
 # parameter:
