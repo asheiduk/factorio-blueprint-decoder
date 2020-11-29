@@ -314,33 +314,21 @@ sub read_count32(*){
 
 # maybe helpfull: https://wiki.factorio.com/Data_types
 # maybe helpfull: https://wiki.factorio.com/Types/Position
-sub read_delta_position(*){
+sub read_position(*$$){
 	my $fh = shift;
+	my $offset_x = shift;
+	my $offset_y = shift;
 
 	# lookahead
-	my $byte = read_u8($fh);
-	if( $byte == 0xff ){
-		my $read_delta = sub() {
-			my $fraction = read_u16($fh);
-			my $integer = read_s16($fh);
-			return $integer +  $fraction / 2**16;
-		};
-		my $delta_x = $read_delta->();
-		my $delta_y = $read_delta->();
-		read_unknown($fh); 		# TODO: strange thing...
-		return ($delta_x, $delta_y);
+	my $delta_x = read_s16($fh);
+	if($delta_x == 0x7fff){
+		my $x_data = read_s32($fh);
+		my $y_data = read_s32($fh);
+		return ($x_data / 256, $y_data / 256);
 	}
 	else {
-		# undo lookahead :-(
-		$fh->ungetc($byte);
-		my $read_delta = sub() {
-			my $fraction = read_u8($fh);
-			my $integer = read_s8($fh);
-			return $integer +  $fraction / 2**8;
-		};
-		my $delta_x = $read_delta->();
-		my $delta_y = $read_delta->();
-		return ($delta_x, $delta_y);
+		my $delta_y = read_s16($fh);
+		return ($offset_x + $delta_x / 256, $offset_y + $delta_y / 256);
 	}
 }
 
@@ -1922,8 +1910,7 @@ sub read_entity(*$$$$){
 	my $type_class = $entry->{class};
 	
 	# position
-	my ($delta_x, $delta_y) = read_delta_position($fh);
-	my ($x, $y) = ($last_x + $delta_x, $last_y + $delta_y);
+	my ($x, $y) = read_position($fh, $last_x, $last_y);
 
 	printf "    [%d] \@%04x - x: %g, y: %g, '%s/%s'\n", $entity_index, $file_offset, $x, $y, $type_class, $type_name;
 	my $entity = {
