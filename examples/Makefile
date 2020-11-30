@@ -35,8 +35,6 @@ parsable_dats = \
 	bps-far-away.dat \
 	bps-trains.dat \
 	bps-train-schedules.dat \
-
-unparsable_dats = \
 	bps-most-buildings.dat \
 
 exports = $(wildcard *.export)
