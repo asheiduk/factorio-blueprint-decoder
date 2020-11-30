@@ -1856,7 +1856,9 @@ sub read_locomotive_details(*$$){
 	my $entity = shift;
 	my $library = shift;
 
-	read_unknown($fh, 0x00, 0x00);
+	ep_entity_ids($fh, $entity, $library);
+	read_unknown($fh, 0x00);
+	
 	my $orientation = read_f32($fh);
 	$entity->{orientation} = $orientation if $orientation;
 
@@ -2142,6 +2144,77 @@ sub bp_entities(*$$){
 	}
 }
 
+sub bp_schedules(*$$){
+	my $fh = shift;
+	my $library = shift;
+	my $result = shift;
+	
+	my $schedules_count = read_count8($fh); # TODO: flexible u8/u32?
+	for(my $s=0; $s<$schedules_count; ++$s){
+		my %schedule;
+		
+		my @locomotives;
+		my $locomotive_count = read_count8($fh); # TODO: flexible u8/u32?
+		for(my $l=0; $l<$locomotive_count; ++$l){
+			my $locomotive_id = read_u32($fh);
+			push @locomotives, $locomotive_id;
+		}
+		$schedule{locomotives} = \@locomotives;
+
+		my $station_count = read_count8($fh);
+		for(my $st=0; $st<$station_count; ++$st){
+			my %station;
+			my $station_name = read_string($fh);
+			$station{station} = $station_name;
+
+			my $condition_count = read_count32($fh);
+			for(my $c=0; $c<$condition_count; ++$c){
+				my %condition;
+			
+				my $condition_type_id = read_u8($fh);
+				my @condition_types = (
+					"time",
+					"full",
+					"empty",
+					"item_count",
+					"circuit",
+					"inactivity",
+					undef, # what is type 6?
+					"fluid_count",
+					"passenger_present",
+					"passenger_not_present",
+				);
+				my $condition_type = $condition_types[$condition_type_id];
+				croak "unexpected condition type $condition_type_id in schedule: " unless $condition_type;
+				$condition{type} = $condition_type;
+				
+				my $or_condition = read_bool($fh);
+				if($or_condition){
+					$condition{compare_type} = "or";
+				}
+				else {
+					$condition{compare_type} = "and";
+				}
+
+				my $ticks = read_u16($fh);
+				$condition{ticks} = $ticks if $ticks;
+				# TODO: export has "ticks: 0" for "time" and "inactivity"
+
+				read_unknown($fh, 0x00, 0x00);
+
+				my $expression = read_condition($fh, $library);
+				$condition{condition} = $expression if $expression;
+
+				push @{$station{wait_conditions}}, \%condition;
+			}
+			read_unknown($fh);
+
+			push @{$schedule{schedule}}, \%station;
+		}
+		push @{$result->{schedules}}, \%schedule;
+	}
+}
+
 sub bp_tiles(*$$){
 	my $fh = shift;
 	my $library = shift;
@@ -2389,7 +2462,7 @@ sub read_blueprint(*$){
 
 	bp_entities($fh, $library, $result);
 
-	read_unknown($fh);
+	bp_schedules($fh, $library, $result);
 
 	bp_tiles($fh, $library, $result);
 
