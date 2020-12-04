@@ -682,6 +682,22 @@ sub ep_railway_vehicle_common(*$$){
 	read_unknown($fh, 0x00, 0x00);
 }
 
+sub ep_color(*$$){
+	my $fh = shift;
+	my $entity = shift;
+	my $library = shift;
+	
+	my $use_colors = read_bool($fh);
+	if($use_colors){
+		$entity->{color} = {
+			r => read_f32($fh),
+			g => read_f32($fh),
+			b => read_f32($fh),
+			a => read_f32($fh),
+		};
+	}
+}
+
 sub read_entity_inserter_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
@@ -1345,8 +1361,10 @@ sub read_train_stop_details(*$$){
 		
 		read_unknown($fh, 0x00, 0x00, 0x00, 0x00);
 	}
+
+	ep_color($fh, $entity, $library);
 	
-	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
 
 sub read_generator_details(*$$){
@@ -1905,7 +1923,9 @@ sub read_locomotive_details(*$$){
 
 	ep_railway_vehicle_common($fh, $entity, $library);
 	
-	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	ep_color($fh, $entity, $library);
+	
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 
 	# fuel
 	ep_items($fh, $entity, $library);
