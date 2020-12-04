@@ -476,7 +476,8 @@ sub ep_bar(*$$){
 	my $entity = shift;
 	my $library = shift;
 
-	my $bar = read_u8($fh);
+	# "Warehousing Mod" writes 2000 stacks but the UI reports 1800.
+	my $bar = read_u16($fh);
 	# The export format suppresses the default values. But these
 	# are - in general - unknown to me beyond the vanilla chests.
 	my %bar_defaults = (
@@ -781,8 +782,6 @@ sub read_entity_container_details(*$$){
 	# restriction aka. "bar"
 	ep_bar($fh, $entity, $library);
 	
-	read_unknown($fh, 0x00);
-
 	# circuit connection
 	my $has_connections = read_bool($fh);
 	if($has_connections){
@@ -803,7 +802,7 @@ sub read_entity_logistic_container_details(*$$){
 	# restriction aka. "bar"
 	ep_bar($fh, $entity, $library);
 	
-	read_unknown($fh, 0x00, 0x00);
+	read_unknown($fh, 0x00);
 
 	read_unknown($fh, 0x01);
 	my $mode = read_u8($fh); 	# not used in export
@@ -858,7 +857,7 @@ sub read_entity_infinity_container_details(*$$){
 	# restriction aka. "bar"
 	ep_bar($fh, $entity, $library);
 
-	read_unknown($fh, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00);
 
 	# circuit connection
 	my $has_connections = read_bool($fh);
@@ -1915,7 +1914,7 @@ sub read_cargo_wagon_details(*$$){
 	ep_filters($fh, $entity, $library);
 	
 	ep_bar($fh, $entity, $library);
-	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
 
 sub read_fluid_wagon_details(*$$){
