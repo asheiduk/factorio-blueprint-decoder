@@ -727,7 +727,22 @@ sub read_entity_inserter_details(*$$){
 	unless($flags2 & 0x02){
 		$entity->{filter_mode} = "blacklist";
 	}
-	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+
+	# pickup/drop position
+	my $is_miniloader = read_bool($fh);
+	if($is_miniloader){
+		# examples: miniloader mod
+		$entity->{drop_position} = {
+			x => read_f64($fh),
+			y => read_f64($fh),
+		};
+		$entity->{pickup_position} = {
+			x => read_f64($fh),
+			y => read_f64($fh),
+		};
+	}
+	
+	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
 
 sub read_entity_constant_combinator_details(*$$){
