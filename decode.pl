@@ -2356,8 +2356,8 @@ sub bp_blueprints(*$$){
 			my $content_type = read_u8($fh);
 			croak "unexpected content type $content_type in slot" unless $content_types[$content_type];
 			
-			read_ignore($fh, 2, "counter(?)"); 	# perhaps some generation counter?
-			read_unknown($fh, 0x00, 0x00);
+			# See _generation_counter_ in read_blueprint_library for details.
+			my $generation = read_u32($fh);
 			
 			my $type_id = read_u16($fh);
 			my $type_entry = get_entry($library, Index::ITEM, $type_id);
@@ -2368,6 +2368,8 @@ sub bp_blueprints(*$$){
 			my $type_handler = $library_entry_handlers{$type_class};
 			croak sprintf "unexpected type-class: %04x '%s'", $type_id, $type_class unless $type_handler;
 			my $handler_result = $type_handler->($fh, $library);
+			
+			$handler_result->{_generation_} = $generation;
 			push @blueprints, $handler_result;
 		}
 		else {
@@ -2605,10 +2607,12 @@ sub read_blueprint_library(*){
 
 	read_unknown($fh, 0x00, 0x00);
 	
-	# Adding a blueprint and saving increments the counter, deleting and saving does not.
-	my $counter = read_u32($fh);
-	debug "counter: %d\n", $counter;
-	$result->{_counter_} = $counter;
+	# Adding a blueprint to the library increments the counter, deleting and moving does not.
+	# When a new blueprint is added to the library this global counter is copied to the new
+	# blueprint and incremened after that. This happens for each new blueprint, not per save.
+	my $generation_counter = read_u32($fh);
+	debug "generation counter: %d (0x%x)\n", $generation_counter, $generation_counter;
+	$result->{_generation_counter_} = $generation_counter;
 
 	# unix timestamp
 	my $timestamp = read_u32($fh); 	# u32/s32?
