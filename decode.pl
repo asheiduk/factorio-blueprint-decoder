@@ -305,16 +305,19 @@ sub read_unknown(*@){
 	}
 }
 
-sub read_ignore(*$){
+sub read_ignore(*$;$){
 	my $fh = shift;
 	my $length = shift;
+	my $guess = shift;
 
 	my $file_position = tell($fh);
 	read $fh, my ($data), $length;
 
-	debug "#\tignored @%04x: %s\n",
-		$file_position, join " ",
-		map{ sprintf "%02x", $_ } unpack "C*", $data;
+	$guess = " " . $guess if $guess;
+	debug "#\tignored%s @%04x: %s\n",
+		$guess,
+		$file_position,
+		join " ", map{ sprintf "%02x", $_ } unpack "C*", $data;
 	
 	return $data;
 }
@@ -677,7 +680,7 @@ sub ep_railway_vehicle_common(*$$){
 	# 26 22 4f
 	# e7 73 ed
 	# ac d3 65
-	read_ignore($fh, 3);
+	read_ignore($fh, 3, "train-id(?)");
 	
 	read_unknown($fh, 0x00, 0x00);
 }
@@ -2341,7 +2344,7 @@ sub bp_blueprints(*$$){
 		my $is_used = read_bool($fh);
 		if($is_used){
 			verbose "\n[%d] library slot: used\n", $b;
-			read_ignore($fh, 5); 	# perhaps some generation counter?
+			read_ignore($fh, 5, "counter(?)"); 	# perhaps some generation counter?
 			my $type_id = read_u16($fh);
 			my $type_entry = get_entry($library, Index::ITEM, $type_id);
 			my $type_class = $type_entry->{class};
@@ -2498,7 +2501,7 @@ sub read_blueprint(*$){
 	verbose "blueprint '%s' (@%04x)\n", $result->{label}, $file_position;
 
 	read_unknown($fh, 0x00, 0x00, 0xff);
-	read_ignore($fh, 4); 	# maybe some offset (with previous 0xff an flexible u8/u32 length?)
+	read_ignore($fh, 4, "offset(?)"); 	# maybe some offset (with previous 0xff an flexible u8/u32 length?)
 
 	bp_version($fh, $library, $result);
 	
