@@ -38,6 +38,7 @@ parsable_dats = \
 	bps-train-schedules.dat \
 	bps-most-buildings.dat \
 	bps-train-colors.dat \
+	bps-miniloader.dat \
 
 exports = $(wildcard *.export)
 
