@@ -2517,8 +2517,16 @@ sub read_blueprint(*$){
 	$result->{label} = read_string($fh);
 	verbose "blueprint '%s' (@%04x)\n", $result->{label}, $file_position;
 
-	read_unknown($fh, 0x00, 0x00, 0xff);
-	read_ignore($fh, 4, "offset(?)"); 	# maybe some offset (with previous 0xff an flexible u8/u32 length?)
+	read_unknown($fh, 0x00, 0x00);
+
+	# might be "flexible size" marker for $content_size. But since the
+	# "migrations" section for 1.0.0.0 is already 347 bytes there is no
+	# way to check that.
+	read_unknown($fh, 0xff);
+	# Interesting: A rare redundancy. Could be used to fast skimming
+	# the library. Reasons: a) Speed, b) unparsable content due to mods/versions.
+	my $content_size = read_count32($fh);
+	my $content_start = tell($fh);
 
 	bp_version($fh, $library, $result);
 	
@@ -2551,6 +2559,11 @@ sub read_blueprint(*$){
 
 	bp_icons($fh, $library, $result);
 
+	my $content_end = tell($fh);
+	my $parsed_size = $content_end - $content_start;
+	croak sprintf "mismatch between declared blueprint size (%d) and parsed size (%d)",
+		$content_size, $parsed_size	unless $parsed_size == $content_size;
+	
 	return $result;
 }
 
