@@ -2325,6 +2325,13 @@ sub bp_icons(*$$){
 	}
 }
 
+my @content_types = (
+	"blueprint",
+	"blueprint-book",
+	"deconstruction-item",
+	"upgrade-item",
+);
+
 my %library_entry_handlers = (
 	"blueprint" => \&read_blueprint,
 	"blueprint-book" => \&read_blueprint_book,
@@ -2344,10 +2351,20 @@ sub bp_blueprints(*$$){
 		my $is_used = read_bool($fh);
 		if($is_used){
 			verbose "\n[%d] library slot: used\n", $b;
-			read_ignore($fh, 5, "counter(?)"); 	# perhaps some generation counter?
+
+			# Interesting: Here is a rare redundancy.
+			my $content_type = read_u8($fh);
+			croak "unexpected content type $content_type in slot" unless $content_types[$content_type];
+			
+			read_ignore($fh, 2, "counter(?)"); 	# perhaps some generation counter?
+			read_unknown($fh, 0x00, 0x00);
+			
 			my $type_id = read_u16($fh);
 			my $type_entry = get_entry($library, Index::ITEM, $type_id);
 			my $type_class = $type_entry->{class};
+			croak "mismatch between content-type '$content_types[$content_type]' and actual content item '$type_class'"
+				unless $content_types[$content_type] eq $type_class;
+			
 			my $type_handler = $library_entry_handlers{$type_class};
 			croak sprintf "unexpected type-class: %04x '%s'", $type_id, $type_class unless $type_handler;
 			my $handler_result = $type_handler->($fh, $library);
