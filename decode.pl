@@ -198,6 +198,28 @@ sub TO_JSON($){
 	return \%copy;
 }
 
+# TODO: move to index XOR inline?
+sub get_entry($$$){
+	my $self = shift or croak;
+	my $kind = shift or croak;
+	my $id = shift or croak;
+	
+	my $result = $self->entry($kind, $id);
+	croak sprintf "##### unknown thing: kind: %s, id: %04x", $kind, $id unless $result;
+	return $result;
+}
+
+# TODO: move to index XOR inline?
+sub get_name($$$){
+	my $self = shift or croak;
+	my $kind = shift or croak;
+	my $id = shift or croak;
+
+	my $result = $self->name($kind, $id);
+	croak sprintf "##### unknown thing: kind: %s, id: %04x", $kind, $id unless $result;
+	return $result;
+}
+
 ################################################################
 ################################################################
 
@@ -368,7 +390,7 @@ sub read_position(*$$){
 
 sub read_signal(*$){
 	my $fh = shift;
-	my $library = shift;
+	my $index = shift;
 	
 	my $kind_id = read_u8($fh);
 	my $id = read_u16($fh);
@@ -378,7 +400,7 @@ sub read_signal(*$){
 	croak "unknown prototype kind $kind_id" unless $kind;
 
 	my $type = ("item", "fluid", "virtual")[$kind_id];
-	my $name = get_name($library, $kind, $id);
+	my $name = $index->get_name($kind, $id);
 
 	return {
 		type => $type,
@@ -388,11 +410,11 @@ sub read_signal(*$){
 
 sub read_signal_with_default(*$$$){
 	my $fh = shift;
-	my $library = shift;
+	my $index = shift;
 	my $default_type = shift or croak;
 	my $default_name = shift or croak;
 
-	my $signal = read_signal($fh, $library);
+	my $signal = read_signal($fh, $index);
 	
 	# map undef to an empty signal
 	if(!$signal){
@@ -411,7 +433,7 @@ sub read_signal_with_default(*$$$){
 # circuit condition & logistic condition
 sub read_condition(*$){
 	my $fh = shift;
-	my $library = shift;
+	my $index = shift;
 	
 	my %condition;
 	
@@ -420,8 +442,8 @@ sub read_condition(*$){
 	my $comparator = $comparators[$comparator_index];
 	croak sprintf "unexpected comparator index 0x%02x", $comparator_index unless $comparator;
 
-	my $first_signal = read_signal($fh, $library);
-	my $second_signal = read_signal($fh, $library);
+	my $first_signal = read_signal($fh, $index);
+	my $second_signal = read_signal($fh, $index);
 
 	my $constant = read_s32($fh);
 	my $use_constant = read_bool($fh);
@@ -450,7 +472,7 @@ sub read_condition(*$){
 sub ep_entity_ids(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 	
 	my $flags1 = read_u8($fh);
 	# 0x10	-- has entity id (default=0)
@@ -477,7 +499,7 @@ sub ep_entity_ids(*$$){
 sub ep_bar(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
 	# "Warehousing Mod" writes 2000 stacks but the UI reports 1800.
 	my $bar = read_u16($fh);
@@ -508,7 +530,7 @@ sub ep_bar(*$$){
 sub ep_direction(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 	
 	my $direction = read_u8($fh);
 	if($direction != 0x00){
@@ -519,7 +541,7 @@ sub ep_direction(*$$){
 sub ep_circuit_connections(*$$;$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 	my $own_circuit_id = shift // "1";
 
 	my %connections;
@@ -552,18 +574,18 @@ sub ep_circuit_connections(*$$;$){
 sub ep_circuit_condition(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 	
-	my $circuit_condition = read_condition($fh, $library);
+	my $circuit_condition = read_condition($fh, $index);
 	$entity->{control_behavior}{circuit_condition} = $circuit_condition if $circuit_condition;
 }
 
 sub ep_logistic_condition(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
-	my $logistic_condition = read_condition($fh, $library);
+	my $logistic_condition = read_condition($fh, $index);
 	$entity->{control_behavior}{logistic_condition} = $logistic_condition if $logistic_condition;
 	
 	my $logistic_connected = read_bool($fh);
@@ -578,7 +600,7 @@ sub ep_logistic_condition(*$$){
 sub ep_mode_of_operation_inserter(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
 	# maybe helpfull: https://lua-api.factorio.com/latest/defines.html#defines.control_behavior
 	# TODO: Wiki inidcates, that this is more complicated!
@@ -592,7 +614,7 @@ sub ep_mode_of_operation_inserter(*$$){
 
 	my $set_stack_size = read_bool($fh);
 	$entity->{control_behavior}{circuit_set_stack_size} = JSON::true if $set_stack_size;
-	my $stack_size_signal = read_signal($fh, $library);
+	my $stack_size_signal = read_signal($fh, $index);
 	if($stack_size_signal){
 		$entity->{control_behavior}{stack_control_input_signal} = $stack_size_signal;
 	}
@@ -601,7 +623,7 @@ sub ep_mode_of_operation_inserter(*$$){
 sub ep_filters(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
 	# Even without filters the count is > 0 for filter-inserters.
 	my $filter_count = read_count8($fh);
@@ -610,7 +632,7 @@ sub ep_filters(*$$){
 		for(my $f=0; $f<$filter_count; ++$f){
 			my $filter_id = read_u16($fh);
 			if($filter_id != 0x00){
-				my $filter_name = get_name($library, Index::ITEM, $filter_id);
+				my $filter_name = $index->get_name(Index::ITEM, $filter_id);
 				push @filters, $filter_name;
 			}
 			else {
@@ -626,7 +648,7 @@ sub ep_filters(*$$){
 sub ep_items(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
 	# Interesting point: Modules are not a simple list like icons.
 	# Instead the modules are first sorted and then grouped by type.
@@ -637,7 +659,7 @@ sub ep_items(*$$){
 	my $item_count = read_count32($fh);
 	for(my $i=0; $i<$item_count; ++$i){
 		my $item_id = read_u16($fh);
-		my $item_name = get_name($library, Index::ITEM, $item_id);
+		my $item_name = $index->get_name(Index::ITEM, $item_id);
 		my $item_count = read_u32($fh);
 		$items{$item_name} = $item_count;
 	}
@@ -647,7 +669,7 @@ sub ep_items(*$$){
 sub ep_turret_common(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 	
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
 	read_unknown($fh, 0x00, 0x00, 0x80, 0x3f); # 1.0f
@@ -668,7 +690,7 @@ sub ep_turret_common(*$$){
 sub ep_railway_vehicle_common(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
 	read_unknown($fh, 0x00, 0x00);
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
@@ -688,7 +710,7 @@ sub ep_railway_vehicle_common(*$$){
 sub ep_color(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 	
 	my $use_colors = read_bool($fh);
 	if($use_colors){
@@ -704,10 +726,10 @@ sub ep_color(*$$){
 sub read_entity_inserter_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
 	# entity ids
-	ep_entity_ids($fh, $entity, $library);
+	ep_entity_ids($fh, $entity, $index);
 	
 	my $flags2 = read_u8($fh);
 	# 0x01 -- override_stack_size
@@ -719,7 +741,7 @@ sub read_entity_inserter_details(*$$){
 	}
 	
 	# direction
-	ep_direction($fh, $entity, $library);
+	ep_direction($fh, $entity, $index);
 
 	# override stack size
 	if($flags2 & 0x01){
@@ -730,19 +752,19 @@ sub read_entity_inserter_details(*$$){
 	my $has_circuit_connections = read_bool($fh);
 	if($has_circuit_connections){
 		# connections
-		ep_circuit_connections($fh, $entity, $library);
+		ep_circuit_connections($fh, $entity, $index);
 		
 		# circuit condition & logistic condition
-		ep_circuit_condition($fh, $entity, $library);
-		ep_logistic_condition($fh, $entity, $library);
+		ep_circuit_condition($fh, $entity, $index);
+		ep_logistic_condition($fh, $entity, $index);
 		read_unknown($fh, 0x00, 0x00);
 
 		# mode of operation
-		ep_mode_of_operation_inserter($fh, $entity, $library);
+		ep_mode_of_operation_inserter($fh, $entity, $index);
 	}
 	
 	# item filters
-	ep_filters($fh, $entity, $library);
+	ep_filters($fh, $entity, $index);
 	unless($flags2 & 0x02){
 		$entity->{filter_mode} = "blacklist";
 	}
@@ -767,19 +789,19 @@ sub read_entity_inserter_details(*$$){
 sub read_entity_constant_combinator_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 	
 	# entity ids
-	ep_entity_ids($fh, $entity, $library);
+	ep_entity_ids($fh, $entity, $index);
 
 	# circuit connection
-	ep_circuit_connections($fh, $entity, $library);
+	ep_circuit_connections($fh, $entity, $index);
 	
 	my $filter_count = read_count32($fh);
 	if($filter_count > 0){
 		my @filters;
 		for(my $f=0; $f<$filter_count; ++$f){
-			my $signal = read_signal($fh, $library);
+			my $signal = read_signal($fh, $index);
 			my $count = read_s32($fh);
 			if($signal){
 				push @filters, {
@@ -800,7 +822,7 @@ sub read_entity_constant_combinator_details(*$$){
 	unless($is_on){
 		$entity->{control_behavior}{is_on} = JSON::false;
 	}
-	ep_direction($fh, $entity, $library);
+	ep_direction($fh, $entity, $index);
 	
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
@@ -808,18 +830,18 @@ sub read_entity_constant_combinator_details(*$$){
 sub read_entity_container_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 	
 	# entity ids
-	ep_entity_ids($fh, $entity, $library);
+	ep_entity_ids($fh, $entity, $index);
 
 	# restriction aka. "bar"
-	ep_bar($fh, $entity, $library);
+	ep_bar($fh, $entity, $index);
 	
 	# circuit connection
 	my $has_connections = read_bool($fh);
 	if($has_connections){
-		ep_circuit_connections($fh, $entity, $library);
+		ep_circuit_connections($fh, $entity, $index);
 	}
 	
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
@@ -828,13 +850,13 @@ sub read_entity_container_details(*$$){
 sub read_entity_logistic_container_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 	
 	# entity ids
-	ep_entity_ids($fh, $entity, $library);
+	ep_entity_ids($fh, $entity, $index);
 
 	# restriction aka. "bar"
-	ep_bar($fh, $entity, $library);
+	ep_bar($fh, $entity, $index);
 	
 	read_unknown($fh, 0x00);
 
@@ -849,7 +871,7 @@ sub read_entity_logistic_container_details(*$$){
 		my $item_count = read_u32($fh);
 		read_unknown($fh);
 		if($item_id){
-			my $item_name = get_name($library, Index::ITEM, $item_id);
+			my $item_name = $index->get_name(Index::ITEM, $item_id);
 			push @request_filters, {
 				name => $item_name,
 				count => $item_count
@@ -874,7 +896,7 @@ sub read_entity_logistic_container_details(*$$){
 	# circuit connection
 	my $has_connections = read_bool($fh);
 	if($has_connections){
-		ep_circuit_connections($fh, $entity, $library);
+		ep_circuit_connections($fh, $entity, $index);
 		read_unknown($fh, 0x00);
 	}
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
@@ -883,20 +905,20 @@ sub read_entity_logistic_container_details(*$$){
 sub read_entity_infinity_container_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
 	# entity ids
-	ep_entity_ids($fh, $entity, $library);
+	ep_entity_ids($fh, $entity, $index);
 
 	# restriction aka. "bar"
-	ep_bar($fh, $entity, $library);
+	ep_bar($fh, $entity, $index);
 
 	read_unknown($fh, 0x00, 0x00);
 
 	# circuit connection
 	my $has_connections = read_bool($fh);
 	if($has_connections){
-		ep_circuit_connections($fh, $entity, $library);
+		ep_circuit_connections($fh, $entity, $index);
 		read_unknown($fh, 0x00);
 	}
 		
@@ -908,7 +930,7 @@ sub read_entity_infinity_container_details(*$$){
 		my $count = read_u32($fh);
 		my $mode = read_u8($fh);
 		push @filters, {
-			name => get_name($library, Index::ITEM, $item_id),
+			name => $index->get_name(Index::ITEM, $item_id),
 			count => $count,
 			mode => ("at-least", "at-most", "exactly")[$mode]
 		};
@@ -923,7 +945,7 @@ sub read_entity_infinity_container_details(*$$){
 sub read_entity_pipe_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
@@ -931,31 +953,31 @@ sub read_entity_pipe_details(*$$){
 sub read_entity_pipe_to_ground_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
 	read_unknown($fh);
-	ep_direction($$fh, $entity, $library);
+	ep_direction($$fh, $entity, $index);
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
 
 sub read_entity_transport_belt_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
-	ep_entity_ids($fh, $entity, $library);
-	ep_direction($$fh, $entity, $library);
+	ep_entity_ids($fh, $entity, $index);
+	ep_direction($$fh, $entity, $index);
 
 	# circuit network connections
 	my $has_circuit_connections = read_bool($fh);
 	if($has_circuit_connections){
 	
 		# connections
-		ep_circuit_connections($fh, $entity, $library);
+		ep_circuit_connections($fh, $entity, $index);
 		
 		# circuit condition & logistic condition
-		ep_circuit_condition($fh, $entity, $library);
-		ep_logistic_condition($fh, $entity, $library);
+		ep_circuit_condition($fh, $entity, $index);
+		ep_logistic_condition($fh, $entity, $index);
 		read_unknown($fh, 0x00, 0x00);
 
 		# mode of operation (specific for transport-belt)
@@ -980,10 +1002,10 @@ sub read_entity_transport_belt_details(*$$){
 sub read_entity_underground_belt_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
 	read_unknown($fh);
-	ep_direction($$fh, $entity, $library);
+	ep_direction($$fh, $entity, $index);
 	my $is_output = read_bool($fh);
 	if($is_output){
 		$entity->{type} = "output";
@@ -998,10 +1020,10 @@ sub read_entity_underground_belt_details(*$$){
 sub read_entity_splitter_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
 	read_unknown($fh);
-	ep_direction($$fh, $entity, $library);
+	ep_direction($$fh, $entity, $index);
 
 	my $priorities = read_u8($fh);
 
@@ -1032,7 +1054,7 @@ sub read_entity_splitter_details(*$$){
 	
 	my $filter_id = read_u16($fh);
 	if($filter_id){
-		my $filter_name = get_name($library, Index::ITEM, $filter_id);
+		my $filter_name = $index->get_name(Index::ITEM, $filter_id);
 		$entity->{filter} = $filter_name;
 	}
 	
@@ -1042,9 +1064,9 @@ sub read_entity_splitter_details(*$$){
 sub read_electric_pole_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
-	ep_entity_ids($fh, $entity, $library);
+	ep_entity_ids($fh, $entity, $index);
 	
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00);
 	
@@ -1052,7 +1074,7 @@ sub read_electric_pole_details(*$$){
 	my $has_circuit_connections = read_bool($fh);
 	if($has_circuit_connections){
 		# connections
-		ep_circuit_connections($fh, $entity, $library);
+		ep_circuit_connections($fh, $entity, $index);
 	}
 
 	# TODO: This applies only to power-switches, but the export
@@ -1071,10 +1093,10 @@ sub read_electric_pole_details(*$$){
 sub read_mining_drill_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
-	ep_entity_ids($fh, $entity, $library);
-	ep_direction($$fh, $entity, $library);
+	ep_entity_ids($fh, $entity, $index);
+	ep_direction($$fh, $entity, $index);
 
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 
@@ -1092,11 +1114,11 @@ sub read_mining_drill_details(*$$){
 	my $has_circuit_connections = read_bool($fh);
 	if($has_circuit_connections){
 		# connections
-		ep_circuit_connections($fh, $entity, $library);
+		ep_circuit_connections($fh, $entity, $index);
 		
 		# circuit condition & logistic condition
-		ep_circuit_condition($fh, $entity, $library);
-		ep_logistic_condition($fh, $entity, $library);
+		ep_circuit_condition($fh, $entity, $index);
+		ep_logistic_condition($fh, $entity, $index);
 		read_unknown($fh, 0x00, 0x00);
 
 		# mode of operation (specific for mining_drill)
@@ -1118,7 +1140,7 @@ sub read_mining_drill_details(*$$){
 	}
 
 	# modules
-	ep_items($fh, $entity, $library);
+	ep_items($fh, $entity, $index);
 	
 	# TODO: Big surprise: Only one trailing zero-byte instead of 5!
 	read_unknown($fh, 0x00);
@@ -1127,10 +1149,10 @@ sub read_mining_drill_details(*$$){
 sub read_offshore_pump_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 	
-	ep_entity_ids($fh, $entity, $library);
-	ep_direction($fh, $entity, $library);
+	ep_entity_ids($fh, $entity, $index);
+	ep_direction($fh, $entity, $index);
 
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00);
 	
@@ -1138,11 +1160,11 @@ sub read_offshore_pump_details(*$$){
 	my $has_circuit_connections = read_bool($fh);
 	if($has_circuit_connections){
 		# connections
-		ep_circuit_connections($fh, $entity, $library);
+		ep_circuit_connections($fh, $entity, $index);
 		
 		# circuit condition & logistic condition
-		ep_circuit_condition($fh, $entity, $library);
-		ep_logistic_condition($fh, $entity, $library);
+		ep_circuit_condition($fh, $entity, $index);
+		ep_logistic_condition($fh, $entity, $index);
 		read_unknown($fh, 0x00, 0x00);
 	}
 	
@@ -1152,19 +1174,19 @@ sub read_offshore_pump_details(*$$){
 sub read_assembling_machine_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
 	read_unknown($fh);
 	my $recipe_id = read_u16($fh);
 	if($recipe_id){
-		my $recipe_name = get_name($library, Index::RECIPE, $recipe_id);
+		my $recipe_name = $index->get_name(Index::RECIPE, $recipe_id);
 		$entity->{recipe} = $recipe_name;
 	}
 
-	ep_direction($fh, $entity, $library);
+	ep_direction($fh, $entity, $index);
 
 	# modules
-	ep_items($fh, $entity, $library);
+	ep_items($fh, $entity, $index);
 	
 	# TODO: Big surprise: Only one trailing zero-byte instead of 5!
 	read_unknown($fh, 0x00);
@@ -1173,11 +1195,11 @@ sub read_assembling_machine_details(*$$){
 sub read_furnace_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 	# modules
-	ep_items($fh, $entity, $library);
+	ep_items($fh, $entity, $index);
 	# TODO: Big surprise: Only one trailing zero-byte instead of 5!
 	read_unknown($fh);
 }
@@ -1185,16 +1207,16 @@ sub read_furnace_details(*$$){
 sub read_storage_tank_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
-	ep_entity_ids($fh, $entity, $library);
-	ep_direction($fh, $entity, $library);
+	ep_entity_ids($fh, $entity, $index);
+	ep_direction($fh, $entity, $index);
 	
 	# circuit network connections
 	my $has_circuit_connections = read_bool($fh);
 	if($has_circuit_connections){
 		# connections
-		ep_circuit_connections($fh, $entity, $library);
+		ep_circuit_connections($fh, $entity, $index);
 	}
 	
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
@@ -1203,10 +1225,10 @@ sub read_storage_tank_details(*$$){
 sub read_pump_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
-	ep_entity_ids($fh, $entity, $library);
-	ep_direction($fh, $entity, $library);
+	ep_entity_ids($fh, $entity, $index);
+	ep_direction($fh, $entity, $index);
 
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
@@ -1216,11 +1238,11 @@ sub read_pump_details(*$$){
 	my $has_circuit_connections = read_bool($fh);
 	if($has_circuit_connections){
 		# connections
-		ep_circuit_connections($fh, $entity, $library);
+		ep_circuit_connections($fh, $entity, $index);
 		
 		# circuit condition & logistic condition
-		ep_circuit_condition($fh, $entity, $library);
-		ep_logistic_condition($fh, $entity, $library);
+		ep_circuit_condition($fh, $entity, $index);
+		ep_logistic_condition($fh, $entity, $index);
 		read_unknown($fh, 0x00, 0x00);
 	}
 	
@@ -1230,35 +1252,35 @@ sub read_pump_details(*$$){
 sub read_straight_rail_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
 	read_unknown($fh);
-	ep_direction($fh, $entity, $library);
+	ep_direction($fh, $entity, $index);
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
 
 sub read_curved_rail_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
 	read_unknown($fh);
-	ep_direction($fh, $entity, $library);
+	ep_direction($fh, $entity, $index);
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
 
 sub read_rail_signal_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
-	ep_entity_ids($fh, $entity, $library);
-	ep_direction($fh, $entity, $library);
+	ep_entity_ids($fh, $entity, $index);
+	ep_direction($fh, $entity, $index);
 	
 	my $has_circuit_connections = read_bool($fh);
 	if($has_circuit_connections){
 		# connections
-		ep_circuit_connections($fh, $entity, $library);
+		ep_circuit_connections($fh, $entity, $index);
 
 		# 
 		my $circuit_close_signal = read_bool($fh);
@@ -1271,7 +1293,7 @@ sub read_rail_signal_details(*$$){
 			my $default = shift;
 			my $key = shift;
 
-			my $value = read_signal($fh, $library);
+			my $value = read_signal($fh, $index);
 			if($value && $value->{type} eq "virtual" && $value->{name} ne $default){
 				$entity->{control_behavior}{$key} = $value;
 			}
@@ -1281,7 +1303,7 @@ sub read_rail_signal_details(*$$){
 		$encode_color_signal->("signal-yellow", "orange_output_signal");
 		$encode_color_signal->("signal-green", "green_output_signal");
 		
-		ep_circuit_condition($fh, $entity, $library);
+		ep_circuit_condition($fh, $entity, $index);
 		read_unknown($fh);
 	}
 	
@@ -1291,22 +1313,22 @@ sub read_rail_signal_details(*$$){
 sub read_rail_chain_signal_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
-	ep_entity_ids($fh, $entity, $library);
-	ep_direction($fh, $entity, $library);
+	ep_entity_ids($fh, $entity, $index);
+	ep_direction($fh, $entity, $index);
 
 	my $has_circuit_connections = read_bool($fh);
 	if($has_circuit_connections){
 		# connections
-		ep_circuit_connections($fh, $entity, $library);
+		ep_circuit_connections($fh, $entity, $index);
 
 		# signals
 		my $encode_color_signal = sub {
 			my $default = shift;
 			my $key = shift;
 
-			my $value = read_signal($fh, $library);
+			my $value = read_signal($fh, $index);
 			if($value && $value->{type} eq "virtual" && $value->{name} ne $default){
 				$entity->{control_behavior}{$key} = $value;
 			}
@@ -1323,23 +1345,23 @@ sub read_rail_chain_signal_details(*$$){
 sub read_train_stop_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
-	ep_entity_ids($fh, $entity, $library);
+	ep_entity_ids($fh, $entity, $index);
 	
 	my $station = read_string($fh);
 	$entity->{station} = $station if $station;
 
-	ep_direction($fh, $entity, $library);
+	ep_direction($fh, $entity, $index);
 	
 	my $has_circuit_connections = read_bool($fh);
 	if($has_circuit_connections){
 		# connections
-		ep_circuit_connections($fh, $entity, $library);
+		ep_circuit_connections($fh, $entity, $index);
 		
 		# circuit condition & logistic condition
-		ep_circuit_condition($fh, $entity, $library);
-		ep_logistic_condition($fh, $entity, $library);
+		ep_circuit_condition($fh, $entity, $index);
+		ep_logistic_condition($fh, $entity, $index);
 
 		read_unknown($fh, 0x00, 0x00);
 
@@ -1357,7 +1379,7 @@ sub read_train_stop_details(*$$){
 		# Why two flags (read_stopped_train and train_stopped_flag)?
 		$entity->{control_behavior}{read_stopped_train} = JSON::true if $read_stopped_train;
 		my $train_stopped_flag = read_bool($fh);
-		my $train_stopped_signal = read_signal($fh, $library);
+		my $train_stopped_signal = read_signal($fh, $index);
 		if($train_stopped_flag){
 			$entity->{control_behavior}{train_stopped_signal} = $train_stopped_signal;
 		}
@@ -1365,7 +1387,7 @@ sub read_train_stop_details(*$$){
 		read_unknown($fh, 0x00, 0x00, 0x00, 0x00);
 	}
 
-	ep_color($fh, $entity, $library);
+	ep_color($fh, $entity, $index);
 	
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
@@ -1373,20 +1395,20 @@ sub read_train_stop_details(*$$){
 sub read_generator_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
-	ep_direction($fh, $entity, $library);
+	ep_direction($fh, $entity, $index);
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
 
 sub read_reactor_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
@@ -1394,17 +1416,17 @@ sub read_reactor_details(*$$){
 sub read_boiler_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
 	read_unknown($fh);
-	ep_direction($fh, $entity, $library);
+	ep_direction($fh, $entity, $index);
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
 
 sub read_solar_panel_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
@@ -1412,9 +1434,9 @@ sub read_solar_panel_details(*$$){
 sub read_accumulator_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
-	ep_entity_ids($fh, $entity, $library);
+	ep_entity_ids($fh, $entity, $index);
 
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
@@ -1422,10 +1444,10 @@ sub read_accumulator_details(*$$){
 	my $has_circuit_connections = read_bool($fh);
 	if($has_circuit_connections){
 		# connections
-		ep_circuit_connections($fh, $entity, $library);
+		ep_circuit_connections($fh, $entity, $index);
 
 		# output signal
-		my $output_signal = read_signal($fh, $library);
+		my $output_signal = read_signal($fh, $index);
 		$entity->{control_behavior}{output_signal} = $output_signal;
 	}
 	
@@ -1435,7 +1457,7 @@ sub read_accumulator_details(*$$){
 sub read_heat_pipe_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
@@ -1443,7 +1465,7 @@ sub read_heat_pipe_details(*$$){
 sub read_land_mine_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
 	read_unknown($fh, 0x00, 0x78, 0x00, 0x00, 0x00);
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
@@ -1452,15 +1474,15 @@ sub read_land_mine_details(*$$){
 sub read_wall_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
-	ep_entity_ids($fh, $entity, $library);
+	ep_entity_ids($fh, $entity, $index);
 	read_unknown($fh, 0x00);
 	
 	my $has_circuit_connections = read_bool($fh);
 	if($has_circuit_connections){
 		# connections
-		ep_circuit_connections($fh, $entity, $library);
+		ep_circuit_connections($fh, $entity, $index);
 
 		my $open_gate = read_bool($fh);
 		$entity->{control_behavior}{circuit_open_gate} = json_bool($open_gate);
@@ -1468,12 +1490,12 @@ sub read_wall_details(*$$){
 		my $read_sensor = read_bool($fh);
 		$entity->{control_behavior}{circuit_read_sensor} = json_bool($read_sensor);
 		
-		my $output_signal = read_signal($fh, $library);
+		my $output_signal = read_signal($fh, $index);
 		if($output_signal->{type} ne "virtual" || $output_signal->{name} ne "signal-G"){
 			$entity->{control_behavior}{output_signal} = $output_signal;
 		}
 
-		ep_circuit_condition($fh, $entity, $library);
+		ep_circuit_condition($fh, $entity, $index);
 		read_unknown($fh);
 	}
 	
@@ -1483,10 +1505,10 @@ sub read_wall_details(*$$){
 sub read_gate_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
 	read_unknown($fh);
-	ep_direction($fh, $entity, $library);
+	ep_direction($fh, $entity, $index);
 	
 	read_unknown($fh, 0x00, 0x00, 0x80, 0x3f);
 
@@ -1497,7 +1519,7 @@ sub read_gate_details(*$$){
 sub read_radar_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
@@ -1508,13 +1530,13 @@ sub read_radar_details(*$$){
 sub read_rocket_silo_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
 	read_unknown($fh);
 		
 	my $recipe_id = read_u16($fh);
 	if($recipe_id){
-		my $recipe_name = get_name($library, Index::RECIPE, $recipe_id);
+		my $recipe_name = $index->get_name(Index::RECIPE, $recipe_id);
 		$entity->{recipe} = $recipe_name;
 	}
 
@@ -1529,45 +1551,45 @@ sub read_rocket_silo_details(*$$){
 
 	my $auto_launch = read_bool($fh);
 	$entity->{auto_launch} = JSON::true if $auto_launch;
-	ep_items($fh, $entity, $library);
+	ep_items($fh, $entity, $index);
 	read_unknown($fh);
 }
 
 sub read_beacon_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0);
 	read_unknown($fh, 0x3f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 	read_unknown($fh, 0x00);
-	ep_items($fh, $entity, $library);
+	ep_items($fh, $entity, $index);
 	read_unknown($fh, 0x00);
 }
 
 sub read_lab_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
-	ep_items($fh, $entity, $library);
+	ep_items($fh, $entity, $index);
 	read_unknown($fh, 0x00);
 }
 
 sub read_roboport_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
-	ep_entity_ids($fh, $entity, $library);
+	ep_entity_ids($fh, $entity, $index);
 
 	my $has_circuit_connections = read_bool($fh);
 	if($has_circuit_connections){
 		# connections
-		ep_circuit_connections($fh, $entity, $library);
+		ep_circuit_connections($fh, $entity, $index);
 
 		# flags and signals
 		my $read_logistics = read_bool($fh);
@@ -1576,22 +1598,22 @@ sub read_roboport_details(*$$){
 		my $read_robot_stats = read_bool($fh);
 		$entity->{control_behavior}{read_robot_stats} = JSON::true if $read_robot_stats;
 
-		my $available_logistic = read_signal_with_default($fh, $library,
+		my $available_logistic = read_signal_with_default($fh, $index,
 			"virtual", "signal-X");
 		$entity->{control_behavior}{available_logistic_output_signal} =
 			$available_logistic if $available_logistic && $read_robot_stats;
 
-		my $total_logistic = read_signal_with_default($fh, $library,
+		my $total_logistic = read_signal_with_default($fh, $index,
 			"virtual", "signal-Y");
 		$entity->{control_behavior}{total_logistic_output_signal} =
 			$total_logistic if $total_logistic && $read_robot_stats;
 
-		my $available_construction = read_signal_with_default($fh, $library,
+		my $available_construction = read_signal_with_default($fh, $index,
 			"virtual", "signal-Z");
 		$entity->{control_behavior}{available_construction_output_signal} =
 			$available_construction if $available_construction && $read_robot_stats;
 
-		my $total_construction = read_signal_with_default($fh, $library,
+		my $total_construction = read_signal_with_default($fh, $index,
 			"virtual", "signal-T");
 		$entity->{control_behavior}{total_construction_output_signal} =
 			$total_construction if $total_construction && $read_robot_stats;
@@ -1602,19 +1624,19 @@ sub read_roboport_details(*$$){
 sub read_arithmetic_combinator_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
-	ep_entity_ids($fh, $entity, $library);
-	ep_direction($fh, $entity, $library);
+	ep_entity_ids($fh, $entity, $index);
+	ep_direction($fh, $entity, $index);
 
 	# connections
-	ep_circuit_connections($fh, $entity, $library, "1");
-	ep_circuit_connections($fh, $entity, $library, "2");
+	ep_circuit_connections($fh, $entity, $index, "1");
+	ep_circuit_connections($fh, $entity, $index, "2");
 
 	# condition
-	my $first_signal = read_signal($fh, $library);
-	my $second_signal = read_signal($fh, $library);
-	my $output_signal = read_signal($fh, $library);
+	my $first_signal = read_signal($fh, $index);
+	my $second_signal = read_signal($fh, $index);
+	my $output_signal = read_signal($fh, $index);
 
 	my $second_constant = read_s32($fh);
 	
@@ -1657,19 +1679,19 @@ sub read_arithmetic_combinator_details(*$$){
 sub read_decider_combinator_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
-	ep_entity_ids($fh, $entity, $library);
-	ep_direction($fh, $entity, $library);
+	ep_entity_ids($fh, $entity, $index);
+	ep_direction($fh, $entity, $index);
 
 	# connections
-	ep_circuit_connections($fh, $entity, $library, "1");
-	ep_circuit_connections($fh, $entity, $library, "2");
+	ep_circuit_connections($fh, $entity, $index, "1");
+	ep_circuit_connections($fh, $entity, $index, "2");
 
 	# condition
-	my $first_signal = read_signal($fh, $library);
-	my $second_signal = read_signal($fh, $library);
-	my $output_signal = read_signal($fh, $library);
+	my $first_signal = read_signal($fh, $index);
+	my $second_signal = read_signal($fh, $index);
+	my $output_signal = read_signal($fh, $index);
 	my $second_constant = read_s32($fh);
 	
 	my $comparator_index = read_u8($fh);
@@ -1707,16 +1729,16 @@ sub read_decider_combinator_details(*$$){
 sub read_lamp_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
-	ep_entity_ids($fh, $entity, $library);
+	ep_entity_ids($fh, $entity, $index);
 	my $has_circuit_connections = read_bool($fh);
 	if($has_circuit_connections){
 		# connections
-		ep_circuit_connections($fh, $entity, $library);
+		ep_circuit_connections($fh, $entity, $index);
 
-		ep_circuit_condition($fh, $entity, $library);
-		ep_logistic_condition($fh, $entity, $library);
+		ep_circuit_condition($fh, $entity, $index);
+		ep_logistic_condition($fh, $entity, $index);
 
 		read_unknown($fh, 0x00);
 		read_unknown($fh, 0x00);
@@ -1731,9 +1753,9 @@ sub read_lamp_details(*$$){
 sub read_programmable_speaker_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
-	ep_entity_ids($fh, $entity, $library);
+	ep_entity_ids($fh, $entity, $index);
 
 	my $playback_volume = read_f64($fh);
 	my $playback_globally = read_bool($fh);
@@ -1747,7 +1769,7 @@ sub read_programmable_speaker_details(*$$){
 		allow_polyphony => json_bool($allow_polyphony),
 	};
 
-	my $icon_signal_id = read_signal($fh, $library);
+	my $icon_signal_id = read_signal($fh, $index);
 	my $alert_message = read_string($fh);
 
 	$entity->{alert_parameters} = {
@@ -1760,10 +1782,10 @@ sub read_programmable_speaker_details(*$$){
 	my $has_circuit_connections = read_bool($fh);
 	if($has_circuit_connections){
 		# connections
-		ep_circuit_connections($fh, $entity, $library);
+		ep_circuit_connections($fh, $entity, $index);
 
 		# condition
-		ep_circuit_condition($fh, $entity, $library);
+		ep_circuit_condition($fh, $entity, $index);
 
 		my $signal_value_is_pitch = read_bool($fh);
 		
@@ -1786,9 +1808,9 @@ sub read_programmable_speaker_details(*$$){
 sub read_power_switch_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
-	ep_entity_ids($fh, $entity, $library);
+	ep_entity_ids($fh, $entity, $index);
 	
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
@@ -1818,11 +1840,11 @@ sub read_power_switch_details(*$$){
 	my $has_circuit_connections = read_bool($fh);
 	if($has_circuit_connections){
 		# connections
-		ep_circuit_connections($fh, $entity, $library);
+		ep_circuit_connections($fh, $entity, $index);
 
 		# condition
-		ep_circuit_condition($fh, $entity, $library);
-		ep_logistic_condition($fh, $entity, $library);
+		ep_circuit_condition($fh, $entity, $index);
+		ep_logistic_condition($fh, $entity, $index);
 
 		read_unknown($fh, 0x00, 0x00);
 	}
@@ -1833,9 +1855,9 @@ sub read_power_switch_details(*$$){
 sub read_ammo_turret_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
-	ep_turret_common($fh, $entity, $library);
+	ep_turret_common($fh, $entity, $index);
 
 	# same for ammo-turret and electric-turret:
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
@@ -1851,9 +1873,9 @@ sub read_ammo_turret_details(*$$){
 sub read_electric_turret_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
-	ep_turret_common($fh, $entity, $library);
+	ep_turret_common($fh, $entity, $index);
 	
 	# same for ammo-turret and electric-turret:
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
@@ -1869,14 +1891,14 @@ sub read_electric_turret_details(*$$){
 sub read_fluid_turret_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
-	ep_turret_common($fh, $entity, $library);
+	ep_turret_common($fh, $entity, $index);
 	
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00);
 
-	ep_direction($fh, $entity, $library);
+	ep_direction($fh, $entity, $index);
 
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
@@ -1889,16 +1911,16 @@ sub read_fluid_turret_details(*$$){
 sub read_artillery_turret_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 	
-	ep_turret_common($fh, $entity, $library);
+	ep_turret_common($fh, $entity, $index);
 	
 	read_unknown($fh, 0xff, 0x7f);
 	read_unknown($fh, 0xff, 0xff, 0xff, 0x7f);
 	read_unknown($fh, 0xff, 0xff, 0xff, 0x7f);
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
 	
-	ep_direction($fh, $entity, $library);
+	ep_direction($fh, $entity, $index);
 	
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 	read_unknown($fh, 0xff, 0xff, 0xff, 0x7f);
@@ -1916,22 +1938,22 @@ sub read_artillery_turret_details(*$$){
 sub read_locomotive_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
-	ep_entity_ids($fh, $entity, $library);
+	ep_entity_ids($fh, $entity, $index);
 	read_unknown($fh, 0x00);
 	
 	my $orientation = read_f32($fh);
 	$entity->{orientation} = $orientation if $orientation;
 
-	ep_railway_vehicle_common($fh, $entity, $library);
+	ep_railway_vehicle_common($fh, $entity, $index);
 	
-	ep_color($fh, $entity, $library);
+	ep_color($fh, $entity, $index);
 	
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 
 	# fuel
-	ep_items($fh, $entity, $library);
+	ep_items($fh, $entity, $index);
 	
 	read_unknown($fh, 0x00);
 }
@@ -1939,32 +1961,32 @@ sub read_locomotive_details(*$$){
 sub read_cargo_wagon_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
 	read_unknown($fh, 0x00, 0x00);
 	my $orientation = read_f32($fh);
 	$entity->{orientation} = $orientation if $orientation;
 
-	ep_railway_vehicle_common($fh, $entity, $library);
+	ep_railway_vehicle_common($fh, $entity, $index);
 
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 
-	ep_filters($fh, $entity, $library);
+	ep_filters($fh, $entity, $index);
 	
-	ep_bar($fh, $entity, $library);
+	ep_bar($fh, $entity, $index);
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
 
 sub read_fluid_wagon_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
 	read_unknown($fh, 0x00, 0x00);
 	my $orientation = read_f32($fh);
 	$entity->{orientation} = $orientation if $orientation;
 
-	ep_railway_vehicle_common($fh, $entity, $library);
+	ep_railway_vehicle_common($fh, $entity, $index);
 
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
@@ -1976,13 +1998,13 @@ sub read_fluid_wagon_details(*$$){
 sub read_artillery_wagon_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
 	read_unknown($fh, 0x00, 0x00);
 	my $orientation = read_f32($fh);
 	$entity->{orientation} = $orientation if $orientation;
 
-	ep_railway_vehicle_common($fh, $entity, $library);
+	ep_railway_vehicle_common($fh, $entity, $index);
 
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00);
@@ -2011,7 +2033,7 @@ sub read_artillery_wagon_details(*$$){
 sub read_X_details(*$$){
 	my $fh = shift;
 	my $entity = shift;
-	my $library = shift;
+	my $index = shift;
 
 	# ...
 	# dump_trailing_data($fh);
@@ -2079,7 +2101,7 @@ my %entity_details_handlers = (
 # - $offset_y
 sub read_entity(*$$$$){
 	my $fh = shift;
-	my $library = shift;
+	my $index = shift;
 	my $entity_index = shift;
 	my $last_x = shift;
 	my $last_y = shift;
@@ -2088,7 +2110,7 @@ sub read_entity(*$$$$){
 		
 	# type
 	my $type_id = read_u16($fh);
-	my $entry = get_entry($library, Index::ENTITY, $type_id);
+	my $entry = $index->get_entry(Index::ENTITY, $type_id);
 	my $type_name = $entry->{name};
 	my $type_class = $entry->{class};
 	
@@ -2108,7 +2130,7 @@ sub read_entity(*$$$$){
 
 	my $handler = $entity_details_handlers{$type_class};
 	if($handler){
-		$handler->($fh, $entity, $library);
+		$handler->($fh, $entity, $index);
 	}
 	else {
 		croak "unexpected type-class '$type_class'";
@@ -2125,7 +2147,7 @@ sub read_entity(*$$$$){
 # maybe helpfull: https://wiki.factorio.com/Version_string_format
 sub bp_version(*$$){
 	my $fh = shift;
-	my $library = shift;
+	my $index = shift;
 	my $result = shift;
 	
 	my @version;
@@ -2138,7 +2160,7 @@ sub bp_version(*$$){
 
 sub bp_migrations(*$$){
 	my $fh = shift;
-	my $library = shift;
+	my $index = shift;
 	my $result = shift;
 
 	my @migrations;
@@ -2192,14 +2214,14 @@ sub bp_prototype_index(*){
 
 sub bp_entities(*$$){
 	my $fh = shift;
-	my $library = shift;
+	my $index = shift;
 	my $result = shift;
 	
 	my $entity_count = read_count32($fh);
 	debug "entities: %d\n", $entity_count;
 	my ($last_x, $last_y) = (0, 0);
 	for(my $e=0; $e<$entity_count; ++$e){
-		my $entity = read_entity($fh, $library, $e, $last_x, $last_y);
+		my $entity = read_entity($fh, $index, $e, $last_x, $last_y);
 		my %position = %{$entity->{position}};
 
 		push @{$result->{entities}}, $entity;
@@ -2210,7 +2232,7 @@ sub bp_entities(*$$){
 
 sub bp_schedules(*$$){
 	my $fh = shift;
-	my $library = shift;
+	my $index = shift;
 	my $result = shift;
 	
 	my $schedules_count = read_count8($fh); # TODO: flexible u8/u32?
@@ -2266,7 +2288,7 @@ sub bp_schedules(*$$){
 
 				read_unknown($fh, 0x00, 0x00);
 
-				my $expression = read_condition($fh, $library);
+				my $expression = read_condition($fh, $index);
 				$condition{condition} = $expression if $expression;
 
 				push @{$station{wait_conditions}}, \%condition;
@@ -2281,7 +2303,7 @@ sub bp_schedules(*$$){
 
 sub bp_tiles(*$$){
 	my $fh = shift;
-	my $library = shift;
+	my $index = shift;
 	my $result = shift;
 	
 	my $tile_count = read_count32($fh);
@@ -2290,7 +2312,7 @@ sub bp_tiles(*$$){
 		my $x = read_s32($fh);
 		my $y = read_s32($fh);
 		my $id = read_u8($fh);
-		my $name = get_name($library, Index::TILE, $id);
+		my $name = $index->get_name(Index::TILE, $id);
 		push @{$result->{tiles}}, {
 			name => $name,
 			position => {
@@ -2303,7 +2325,7 @@ sub bp_tiles(*$$){
 
 sub bp_icons(*$$){
 	my $fh = shift;
-	my $library = shift;
+	my $index = shift;
 	my $result = shift;
 
 	my $icon_count = read_count8($fh);
@@ -2311,7 +2333,7 @@ sub bp_icons(*$$){
 		debug "icons: %s\n", $icon_count;
 		my @icons;
 		for(my $i=0; $i<$icon_count; ++$i){
-			my $icon = read_signal($fh, $library);
+			my $icon = read_signal($fh, $index);
 			if($icon){
 				debug "    [%d] '%s' / '%s'\n", $i, $icon->{type}, $icon->{name};
 				push @icons, $icon;
@@ -2341,7 +2363,7 @@ my %library_entry_handlers = (
 
 sub bp_blueprints(*$$){
 	my $fh = shift;
-	my $library = shift;
+	my $index = shift;
 	my $result = shift;
 	
 	my $blueprint_count = read_count32($fh);
@@ -2360,14 +2382,14 @@ sub bp_blueprints(*$$){
 			my $generation = read_u32($fh);
 			
 			my $type_id = read_u16($fh);
-			my $type_entry = get_entry($library, Index::ITEM, $type_id);
+			my $type_entry = $index->get_entry(Index::ITEM, $type_id);
 			my $type_class = $type_entry->{class};
 			croak "mismatch between content-type '$content_types[$content_type]' and actual content item '$type_class'"
 				unless $content_types[$content_type] eq $type_class;
 			
 			my $type_handler = $library_entry_handlers{$type_class};
 			croak sprintf "unexpected type-class: %04x '%s'", $type_id, $type_class unless $type_handler;
-			my $handler_result = $type_handler->($fh, $library);
+			my $handler_result = $type_handler->($fh, $index);
 			
 			$handler_result->{_generation_} = $generation;
 			push @blueprints, $handler_result;
@@ -2387,7 +2409,7 @@ sub bp_blueprints(*$$){
 
 sub read_upgrade_item(*$){
 	my $fh = shift;
-	my $library = shift;
+	my $index = shift;
 	my $result = {};
 
 
@@ -2399,7 +2421,7 @@ sub read_upgrade_item(*$){
 
 	read_unknown($fh);
 
-	bp_icons($fh, $library, $result);
+	bp_icons($fh, $index, $result);
 
 	read_unknown($fh);
 
@@ -2412,13 +2434,13 @@ sub read_upgrade_item(*$){
 		if($is_item){
 			return {
 				type => "item",
-				name => get_name($library, Index::ITEM, $id)
+				name => $index->get_name(Index::ITEM, $id)
 			};
 		}
 		else {
 			return {
 				type => "entity",
-				name => get_name($library, Index::ENTITY, $id)
+				name => $index->get_name(Index::ENTITY, $id)
 			};
 		}
 	};
@@ -2446,7 +2468,7 @@ sub read_upgrade_item(*$){
 
 sub read_deconstruction_item(*$){
 	my $fh = shift;
-	my $library = shift;
+	my $index = shift;
 	my $result = {};
 
 	$result->{item} = "deconstruction-planner";
@@ -2457,7 +2479,7 @@ sub read_deconstruction_item(*$){
 
 	read_unknown($fh);
 	
-	bp_icons($fh, $library, $result);
+	bp_icons($fh, $index, $result);
 
 	my $entity_filter_mode = read_u8($fh);
 	$result->{settings}{entity_filter_mode} = $entity_filter_mode if $entity_filter_mode;
@@ -2470,7 +2492,7 @@ sub read_deconstruction_item(*$){
 	for(my $f=0; $f<$entity_filter_count; ++$f){
 		my $item_id = read_u16($fh);
 		if($item_id != 0x00){
-			my $item_name = get_name($library, Index::ENTITY, $item_id);
+			my $item_name = $index->get_name(Index::ENTITY, $item_id);
 			push @entity_filters, $item_name;
 		}
 		else {
@@ -2496,7 +2518,7 @@ sub read_deconstruction_item(*$){
 	for(my $t=0; $t<$tile_filter_count; ++$t){
 		my $tile_id = read_u8($fh);
 		if($tile_id != 0x00){
-			my $tile_name = get_name($library, Index::TILE, $tile_id);
+			my $tile_name = $index->get_name(Index::TILE, $tile_id);
 			push @tile_filters, $tile_name;
 		}
 		else {
@@ -2510,7 +2532,7 @@ sub read_deconstruction_item(*$){
 
 sub read_blueprint(*$){
 	my $fh = shift;
-	my $library = shift;
+	my $index = shift;
 	my $result = {};
 
 	my $file_position = tell($fh);
@@ -2530,11 +2552,11 @@ sub read_blueprint(*$){
 	my $content_size = read_count32($fh);
 	my $content_start = tell($fh);
 
-	bp_version($fh, $library, $result);
+	bp_version($fh, $index, $result);
 	
 	read_unknown($fh);
 
-	bp_migrations($fh, $library, $result);
+	bp_migrations($fh, $index, $result);
 
 	$result->{description} = read_string($fh);
 
@@ -2551,15 +2573,15 @@ sub read_blueprint(*$){
 		$result->{"absolute-snapping"} = JSON::true if $absolute_snapping;
 	}
 
-	bp_entities($fh, $library, $result);
+	bp_entities($fh, $index, $result);
 
-	bp_schedules($fh, $library, $result);
+	bp_schedules($fh, $index, $result);
 
-	bp_tiles($fh, $library, $result);
+	bp_tiles($fh, $index, $result);
 
 	read_unknown($fh);
 
-	bp_icons($fh, $library, $result);
+	bp_icons($fh, $index, $result);
 
 	my $content_end = tell($fh);
 	my $parsed_size = $content_end - $content_start;
@@ -2571,7 +2593,7 @@ sub read_blueprint(*$){
 
 sub read_blueprint_book(*$){
 	my $fh = shift;
-	my $library = shift;
+	my $index = shift;
 	my $result = {};
 
 	my $file_position = tell $fh;
@@ -2583,9 +2605,9 @@ sub read_blueprint_book(*$){
 	
 	$result->{description} = read_string($fh);
 	read_unknown($fh);
-	bp_icons($fh, $library, $result);
+	bp_icons($fh, $index, $result);
 
-	bp_blueprints($fh, $library, $result);
+	bp_blueprints($fh, $index, $result);
 
 	my $active_index = read_u8($fh); 	# TODO: 8/32 length?
 	$result->{active_index} = $active_index if $active_index;
@@ -2603,7 +2625,8 @@ sub read_blueprint_library(*){
 	bp_version($fh, $result, $result);
 	read_unknown($fh);
 	bp_migrations($fh, $result, $result);
-	$result->{prototypes} = bp_prototype_index($fh);
+	my $index = bp_prototype_index($fh);
+	$result->{prototypes} = $index;
 
 	read_unknown($fh, 0x00, 0x00);
 	
@@ -2622,7 +2645,7 @@ sub read_blueprint_library(*){
 
 	read_unknown($fh, 0x01);
 
-	bp_blueprints($fh, $result, $result);
+	bp_blueprints($fh, $index, $result);
 	
 	return $result;
 }
@@ -2630,28 +2653,6 @@ sub read_blueprint_library(*){
 ################################################################
 #
 # utilities
-
-# TODO: move to index XOR inline?
-sub get_entry($$$){
-	my $library = shift or croak;
-	my $kind = shift or croak;
-	my $id = shift or croak;
-	
-	my $result = $library->{prototypes}->entry($kind, $id);
-	croak sprintf "##### unknown thing: kind: %s, id: %04x", $kind, $id unless $result;
-	return $result;
-}
-
-# TODO: move to index XOR inline?
-sub get_name($$$){
-	my $library = shift or croak;
-	my $kind = shift or croak;
-	my $id = shift or croak;
-
-	my $result = $library->{prototypes}->name($kind, $id);
-	croak sprintf "##### unknown thing: kind: %s, id: %04x", $kind, $id unless $result;
-	return $result;
-}
 
 sub json_bool($){
 	my $arg = shift;
