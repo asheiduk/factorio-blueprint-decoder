@@ -144,7 +144,7 @@ sub add($$$$$) {
 	my $name = shift or croak;
 
 	my $kind = $self->_map_class_to_kind($class);
-	my $entry = $self->entry($kind, $class, $id);
+	my $entry = $self->_entry($kind, $class, $id);
 	croak "ID $id is already used for $entry->{class}/$entry->{name}" if $entry;
 
 	$self->{$kind}{$id} = {
@@ -154,7 +154,17 @@ sub add($$$$$) {
 	};
 }
 
-sub entry($$$$){
+sub entry($$$){
+	my $self = shift or croak;
+	my $kind = shift or croak;
+	my $id = shift or croak;
+	
+	my $result = $self->_entry($kind, $id);
+	croak sprintf "unknown thing: kind: '%s', id: %04x", $kind, $id unless $result;
+	return $result;
+}
+
+sub _entry($$$$){
 	my $self = shift or croak;
 	my $kind = shift or croak;
 	my $id = shift or croak;
@@ -185,17 +195,6 @@ sub TO_JSON($){
 		delete $copy{$_} unless %{$copy{$_}};
 	}
 	return \%copy;
-}
-
-# TODO: move to index XOR inline?
-sub get_entry($$$){
-	my $self = shift or croak;
-	my $kind = shift or croak;
-	my $id = shift or croak;
-	
-	my $result = $self->entry($kind, $id);
-	croak sprintf "##### unknown thing: kind: %s, id: %04x", $kind, $id unless $result;
-	return $result;
 }
 
 ################################################################
@@ -376,8 +375,6 @@ sub read_name(&$$){
 	return undef unless $id;
 
 	my $entry = $index->entry($kind, $id);
-	croak sprintf "##### unknown thing: kind: %s, id: %04x", $kind, $id unless $entry;
-	
 	return $entry->{name};
 }
 
@@ -2100,7 +2097,7 @@ sub read_entity(*$$$$){
 		
 	# type
 	my $type_id = read_u16($fh);
-	my $entry = $index->get_entry(Index::ENTITY, $type_id);
+	my $entry = $index->entry(Index::ENTITY, $type_id);
 	my $type_name = $entry->{name};
 	my $type_class = $entry->{class};
 	
@@ -2371,7 +2368,7 @@ sub bp_blueprints(*$$){
 			my $generation = read_u32($fh);
 			
 			my $type_id = read_u16($fh);
-			my $type_entry = $index->get_entry(Index::ITEM, $type_id);
+			my $type_entry = $index->entry(Index::ITEM, $type_id);
 			my $type_class = $type_entry->{class};
 			croak "mismatch between content-type '$content_types[$content_type]' and actual content item '$type_class'"
 				unless $content_types[$content_type] eq $type_class;
