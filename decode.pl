@@ -165,17 +165,6 @@ sub entry($$$$){
 	return $entries->{$id};
 }
 
-sub name($$$) {
-	my $self = shift or croak;
-	my $kind = shift or croak;
-	my $id = shift or croak;
-
-	# avoid autovivification of $self->{$kind}{$id}{name};
-	my $entry = $self->entry($kind, $id);
-	return undef unless $entry;
-	return $entry->{name};
-}
-
 sub _map_class_to_kind($$){
 	my $self = shift or croak;
 	my $class = shift or croak;
@@ -205,17 +194,6 @@ sub get_entry($$$){
 	my $id = shift or croak;
 	
 	my $result = $self->entry($kind, $id);
-	croak sprintf "##### unknown thing: kind: %s, id: %04x", $kind, $id unless $result;
-	return $result;
-}
-
-# TODO: move to index XOR inline?
-sub get_name($$$){
-	my $self = shift or croak;
-	my $kind = shift or croak;
-	my $id = shift or croak;
-
-	my $result = $self->name($kind, $id);
 	croak sprintf "##### unknown thing: kind: %s, id: %04x", $kind, $id unless $result;
 	return $result;
 }
@@ -388,19 +366,48 @@ sub read_position(*$$){
 #
 # mid level parsing -- with Index
 
+sub read_name(&$$){
+	my $reader = shift or croak;
+	my $index = shift or croak;
+	my $kind = shift or croak;
+
+	my $id = $reader->();
+	
+	return undef unless $id;
+
+	my $entry = $index->entry($kind, $id);
+	croak sprintf "##### unknown thing: kind: %s, id: %04x", $kind, $id unless $entry;
+	
+	return $entry->{name};
+}
+
+sub read_name8(*$$){
+	my $fh = shift or croak;
+	my $index = shift or croak;
+	my $kind = shift or croak;
+
+	return read_name(sub { read_u8($fh); }, $index, $kind);
+}
+
+sub read_name16(*$$){
+	my $fh = shift or croak;
+	my $index = shift or croak;
+	my $kind = shift or croak;
+	
+	return read_name(sub { read_u16($fh); }, $index, $kind);
+}
+
 sub read_signal(*$){
 	my $fh = shift;
 	my $index = shift;
 	
 	my $kind_id = read_u8($fh);
-	my $id = read_u16($fh);
-	return undef unless $id;
-	
 	my $kind = (Index::ITEM, Index::FLUID, Index::VSIGNAL)[$kind_id];
 	croak "unknown prototype kind $kind_id" unless $kind;
 
 	my $type = ("item", "fluid", "virtual")[$kind_id];
-	my $name = $index->get_name($kind, $id);
+	
+	my $name = read_name16($fh, $index, $kind);
 
 	return {
 		type => $type,
@@ -630,14 +637,8 @@ sub ep_filters(*$$){
 	if($filter_count > 0){
 		my @filters;
 		for(my $f=0; $f<$filter_count; ++$f){
-			my $filter_id = read_u16($fh);
-			if($filter_id != 0x00){
-				my $filter_name = $index->get_name(Index::ITEM, $filter_id);
-				push @filters, $filter_name;
-			}
-			else {
-				push @filters, undef;
-			}
+			my $filter_name = read_name16($fh, $index, Index::ITEM);
+			push @filters, $filter_name;
 		}
 		$entity->{filters} = \@filters;
 		# TODO: The export file suppresses an empty list (or a list with only undef entries).
@@ -658,8 +659,7 @@ sub ep_items(*$$){
 	my %items;
 	my $item_count = read_count32($fh);
 	for(my $i=0; $i<$item_count; ++$i){
-		my $item_id = read_u16($fh);
-		my $item_name = $index->get_name(Index::ITEM, $item_id);
+		my $item_name = read_name16($fh, $index, Index::ITEM);
 		my $item_count = read_u32($fh);
 		$items{$item_name} = $item_count;
 	}
@@ -867,11 +867,10 @@ sub read_entity_logistic_container_details(*$$){
 	my @request_filters;
 	my $filter_count = read_count8($fh);
 	for(my $f=0; $f<$filter_count; ++$f){
-		my $item_id = read_u16($fh);
+		my $item_name = read_name16($fh, $index, Index::ITEM);
 		my $item_count = read_u32($fh);
 		read_unknown($fh);
-		if($item_id){
-			my $item_name = $index->get_name(Index::ITEM, $item_id);
+		if($item_name){
 			push @request_filters, {
 				name => $item_name,
 				count => $item_count
@@ -926,11 +925,11 @@ sub read_entity_infinity_container_details(*$$){
 	my @filters;
 	my $filter_count = read_count8($fh);
 	for(my $f=0; $f<$filter_count; ++$f){
-		my $item_id = read_u16($fh);
+		my $item_name = read_name16($fh, $index, Index::ITEM);
 		my $count = read_u32($fh);
 		my $mode = read_u8($fh);
 		push @filters, {
-			name => $index->get_name(Index::ITEM, $item_id),
+			name => $item_name,
 			count => $count,
 			mode => ("at-least", "at-most", "exactly")[$mode]
 		};
@@ -1052,11 +1051,8 @@ sub read_entity_splitter_details(*$$){
 	$entity->{input_priority} = $input_priority if $input_priority;
 	$entity->{output_priority} = $output_priority if $output_priority;
 	
-	my $filter_id = read_u16($fh);
-	if($filter_id){
-		my $filter_name = $index->get_name(Index::ITEM, $filter_id);
-		$entity->{filter} = $filter_name;
-	}
+	my $filter_name = read_name16($fh, $index, Index::ITEM);
+	$entity->{filter} = $filter_name if $filter_name;
 	
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
@@ -1177,11 +1173,8 @@ sub read_assembling_machine_details(*$$){
 	my $index = shift;
 
 	read_unknown($fh);
-	my $recipe_id = read_u16($fh);
-	if($recipe_id){
-		my $recipe_name = $index->get_name(Index::RECIPE, $recipe_id);
-		$entity->{recipe} = $recipe_name;
-	}
+	my $recipe_name = read_name16($fh, $index, Index::RECIPE);
+	$entity->{recipe} = $recipe_name if $recipe_name;
 
 	ep_direction($fh, $entity, $index);
 
@@ -1534,11 +1527,8 @@ sub read_rocket_silo_details(*$$){
 
 	read_unknown($fh);
 		
-	my $recipe_id = read_u16($fh);
-	if($recipe_id){
-		my $recipe_name = $index->get_name(Index::RECIPE, $recipe_id);
-		$entity->{recipe} = $recipe_name;
-	}
+	my $recipe_name = read_name16($fh, $index, Index::RECIPE);
+	$entity->{recipe} = $recipe_name if $recipe_name;
 
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
@@ -2311,8 +2301,7 @@ sub bp_tiles(*$$){
 	for(my $t=0; $t<$tile_count; ++$t){
 		my $x = read_s32($fh);
 		my $y = read_s32($fh);
-		my $id = read_u8($fh);
-		my $name = $index->get_name(Index::TILE, $id);
+		my $name = read_name8($fh, $index, Index::TILE);
 		push @{$result->{tiles}}, {
 			name => $name,
 			position => {
@@ -2425,24 +2414,16 @@ sub read_upgrade_item(*$){
 
 	read_unknown($fh);
 
-
 	my $reader = sub {
 		my $is_item = read_bool($fh);
-		my $id = read_u16($fh);
+		my $type = (Index::ENTITY, Index::ITEM)[$is_item];
 		
-		return undef unless $id;
-		if($is_item){
-			return {
-				type => "item",
-				name => $index->get_name(Index::ITEM, $id)
-			};
-		}
-		else {
-			return {
-				type => "entity",
-				name => $index->get_name(Index::ENTITY, $id)
-			};
-		}
+		my $name = read_name16($fh, $index, $type);
+		return undef unless $name;
+		return {
+			type => $type,
+			name => $name
+		};
 	};
 
 	my $mapper_count = read_u8($fh);
@@ -2490,14 +2471,8 @@ sub read_deconstruction_item(*$){
 	debug "entity-filters: %d\n", $entity_filter_count;
 	my @entity_filters;
 	for(my $f=0; $f<$entity_filter_count; ++$f){
-		my $item_id = read_u16($fh);
-		if($item_id != 0x00){
-			my $item_name = $index->get_name(Index::ENTITY, $item_id);
-			push @entity_filters, $item_name;
-		}
-		else {
-			push @entity_filters, undef;
-		}
+		my $item_name = read_name16($fh, $index, Index::ENTITY);
+		push @entity_filters, $item_name;
 	}
 	$result->{settings}{entity_filters} = \@entity_filters;
 
@@ -2516,14 +2491,8 @@ sub read_deconstruction_item(*$){
 	debug "tile-filters: %d\n", $tile_filter_count;
 	my @tile_filters;
 	for(my $t=0; $t<$tile_filter_count; ++$t){
-		my $tile_id = read_u8($fh);
-		if($tile_id != 0x00){
-			my $tile_name = $index->get_name(Index::TILE, $tile_id);
-			push @tile_filters, $tile_name;
-		}
-		else {
-			push @tile_filters, undef;
-		}
+		my $tile_name = read_name8($fh, $index, Index::TILE);
+		push @tile_filters, $tile_name;
 	}
 	$result->{settings}{tile_filters} = \@tile_filters;
 	
