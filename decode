@@ -1,0 +1,157 @@
+#!/usr/bin/python3
+
+import sys
+import struct
+import json
+
+
+opt_x = False   # extended output: add voluminous stuff found in
+                # .dat but not used in .export. Currently:
+                #   - migrations (occur in every BP and BP book)
+                #   - prototype index
+opt_v = False   # verbose output on STDERR
+opt_d = True    # debug output on STDERR
+
+
+################################################################
+#
+# utilities
+
+def debug(*args):
+    if opt_d:
+        print(*args, file=sys.stderr, flush=True)
+
+def verbose(*args):
+    if opt_v or opt_d:
+        print(*args, file=sys.stderr, flush=True)
+
+
+class ParseError(Exception):
+    pass
+
+
+################################################################
+#
+# primitives
+
+class PrimitiveStream:
+
+    def __init__(self, f):
+        self._read = lambda format : struct.unpack(
+            format,
+            f.read(struct.calcsize(format)))[0]
+        self._read_raw = lambda length: f.read(length)
+
+    def s8(self):
+        return self._read("<b")
+
+    def u8(self):
+        return self._read("<B")
+
+    def s16(self):
+        return self._read("<h")
+
+    def u16(self):
+        return self._read("<H")
+
+    def s32(self):
+        return self._read("<i")
+
+    def u32(self):
+        return self._read("<I")
+
+    # see https://en.wikipedia.org/wiki/Single-precision_floating-point_format#Single-precision_examples
+    # for remarkable examples like "0x3f80_0000" for "1"
+    def f32(self):
+        return self._read("<f")
+
+    # see https://en.wikipedia.org/wiki/Double-precision_floating-point_format#Double-precision_examples
+    # for remarkable examples like "0x3ff0_0000_0000_0000" for "1"
+    def f64(self):
+        return self._read("<d")
+
+    def count(self):
+        length = self.u8()
+        if length == 0xff:
+            return self.u32()
+        else:
+            return length
+
+    def count8(self):
+        return self.u8()
+
+    def count16(self):
+        return self.u16()
+
+    def count32(self):
+        return self.u32()
+
+    def string(self):
+        length = self.count()
+        return self._read_raw(length).decode("utf-8")
+
+################################################################
+
+# TODO: sane implementation
+def read_unknown(s: PrimitiveStream, expected = (0x00)):
+    data = s.u8()
+    assert not data, f"expected 0x00 but got {data:#04x}"
+
+
+################################################################
+#
+# library -- utilities
+
+def parse_version(stream, result):
+    version = (
+        stream.u16(),
+        stream.u16(),
+        stream.u16(),
+        stream.u16(),
+    )
+    debug(f"version: {'.'.join(map(str, version))}")
+    result["version"] = version
+
+
+def parse_migrations(stream, result):
+    migrations = []
+    migration_count = stream.count8()
+    if opt_x:
+        debug(f"migrations: {migration_count}")
+    for m in range(migration_count):
+        mod_name = stream.string()
+        migration_file = stream.string()
+        if opt_x:
+            debug(f"    [{m}] mod '{mod_name}', migration '{migration_file}'")
+        migrations.append({
+            "mod_name": mod_name,
+            "migration_file": migration_file
+        })
+    if opt_x:
+        result["migrations"] = migrations
+
+
+################################################################
+#
+# library -- primary objects
+
+def parse_blueprint_library(stream: PrimitiveStream):
+    result = {}
+
+    parse_version(stream, result)
+
+    read_unknown(stream)
+
+    parse_migrations(stream, result)
+
+    return result
+
+################################################################
+#
+# main
+
+filename = "blueprint-storage.dat"
+verbose(f"file: {filename}")
+with open(filename, "rb") as f:
+    library = parse_blueprint_library(PrimitiveStream(f))
+    print(json.dumps(library, indent=4, sort_keys=True, ensure_ascii=False))
