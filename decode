@@ -170,10 +170,15 @@ class Index:
 class PrimitiveStream:
 
     def __init__(self, f):
-        self._read = lambda format : struct.unpack(
+        self._f = f
+
+    def _read(self, format):
+        return struct.unpack(
             format,
-            f.read(struct.calcsize(format)))[0]
-        self._read_raw = lambda length: f.read(length)
+            self._f.read(struct.calcsize(format)))[0]
+
+    def tell(self):
+        return self._f.tell()
 
     def s8(self):
         return self._read("<b")
@@ -211,7 +216,11 @@ class PrimitiveStream:
             return length
 
     def count8(self):
-        return self.u8()
+        data = self.u8()
+        if data == 0xff:
+            file_position = self.tell()
+            raise ParseError("unexpected flexible length 0xff @{file_position:#x}")
+        return data
 
     def count16(self):
         return self.u16()
@@ -221,14 +230,19 @@ class PrimitiveStream:
 
     def string(self):
         length = self.count()
-        return self._read_raw(length).decode("utf-8")
+        return self._f.read(length).decode("utf-8")
 
 ################################################################
 
-# TODO: sane implementation
-def read_unknown(s: PrimitiveStream, expected = (0x00)):
-    data = s.u8()
-    assert not data, f"expected 0x00 but got {data:#04x}"
+def read_unknown(stream: PrimitiveStream, *expected_bytes):
+    if not expected_bytes:
+        expected_bytes = 0x00,
+
+    for expected in expected_bytes:
+        actual = stream.u8()
+        if actual != expected:
+            position = stream.tell()
+            raise ParseError(f"expected {expected:#04x} but got {actual:#04x} at position {position} ({position:#x})")
 
 
 ################################################################
@@ -312,6 +326,8 @@ def parse_blueprint_library(stream: PrimitiveStream):
     parse_migrations(stream, result)
 
     global_index = parse_index(stream, result)
+
+    read_unknown(stream, 0x00, 0x00)
 
     return result
 
