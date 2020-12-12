@@ -3,6 +3,7 @@
 import sys
 import struct
 import json
+from enum import Enum
 
 
 opt_x = False   # extended output: add voluminous stuff found in
@@ -28,6 +29,145 @@ def verbose(*args):
 
 class ParseError(Exception):
     pass
+
+
+################################################################
+#
+# Index
+
+class Index:
+
+    # types (distinct number ranges)
+    # `value` is the prototype-class (except "entity"). In BP exports the wording is just "virtual".
+    class Type(Enum):
+        ITEM = "item"
+        FLUID = "fluid"
+        VSIGNAL = "virtual-signal"
+        TILE = "tile"
+        ENTITY = "entity"
+        RECIPE = "recipe"
+
+    ITEM = Type.ITEM
+    FLUID = Type.FLUID
+    VSIGNAL = Type.VSIGNAL
+    TILE = Type.TILE
+    ENTITY = Type.ENTITY
+    RECIPE = Type.RECIPE
+
+    _type_mapping = {
+        # item
+        "ammo": ITEM,
+        "armor": ITEM,
+        "blueprint": ITEM,
+        "blueprint-book": ITEM,
+        "capsule": ITEM,
+        "deconstruction-item": ITEM,
+        "gun": ITEM,
+        "item": ITEM,
+        "item-with-entity-data": ITEM,
+        "module": ITEM,
+        "spidertron-remote": ITEM,
+        "rail-planner": ITEM,
+        "repair-tool": ITEM,
+        "tool": ITEM,
+        "upgrade-item": ITEM,
+        # fluid
+        "fluid": FLUID,
+        # virtual-signal
+        "virtual-signal": VSIGNAL,
+        # entity
+        "accumulator": ENTITY,
+        "ammo-turret": ENTITY,
+        "arithmetic-combinator": ENTITY,
+        "artillery-turret": ENTITY,
+        "artillery-wagon": ENTITY,
+        "assembling-machine": ENTITY,
+        "beacon": ENTITY,
+        "boiler": ENTITY,
+        "cargo-wagon": ENTITY,
+        "cliff": ENTITY,
+        "constant-combinator": ENTITY,
+        "container": ENTITY,
+        "curved-rail": ENTITY,
+        "decider-combinator": ENTITY,
+        "electric-pole": ENTITY,
+        "electric-turret": ENTITY,
+        "entity-ghost": ENTITY,
+        "fish": ENTITY,
+        "fluid-turret": ENTITY,
+        "fluid-wagon": ENTITY,
+        "furnace": ENTITY,
+        "gate": ENTITY,
+        "generator": ENTITY,
+        "heat-pipe": ENTITY,
+        "infinity-container": ENTITY,
+        "inserter": ENTITY,
+        "item-entity": ENTITY,
+        "item-request-proxy": ENTITY,
+        "lab": ENTITY,
+        "lamp": ENTITY,
+        "land-mine": ENTITY,
+        "locomotive": ENTITY,
+        "logistic-container": ENTITY,
+        "mining-drill": ENTITY,
+        "offshore-pump": ENTITY,
+        "pipe": ENTITY,
+        "pipe-to-ground": ENTITY,
+        "power-switch": ENTITY,
+        "programmable-speaker": ENTITY,
+        "pump": ENTITY,
+        "radar": ENTITY,
+        "rail-chain-signal": ENTITY,
+        "rail-signal": ENTITY,
+        "reactor": ENTITY,
+        "roboport": ENTITY,
+        "rocket-silo": ENTITY,
+        "simple-entity": ENTITY,
+        "solar-panel": ENTITY,
+        "splitter": ENTITY,
+        "storage-tank": ENTITY,
+        "straight-rail": ENTITY,
+        "tile-ghost": ENTITY,
+        "train-stop": ENTITY,
+        "transport-belt": ENTITY,
+        "tree": ENTITY,
+        "underground-belt": ENTITY,
+        "wall": ENTITY,
+        # tile
+        "tile": TILE,
+        # recipe
+        "recipe": RECIPE,
+    }
+
+    class Entry:
+        def __init__(self, id: int, type, prototype: str, name: str):
+            self.id = id
+            self.type = type
+            self.prototype = prototype
+            self.name = name
+
+    def __init__(self):
+        self._data = {
+            self.ITEM: {},
+            self.FLUID: {},
+            self.VSIGNAL: {},
+            self.TILE: {},
+            self.ENTITY: {},
+            self.RECIPE: {},
+        }
+
+    def add(self, id: int, prototype: str, name: str) -> Entry:
+        if id == 0x00:
+            raise ValueError("ID 0 is not allowed")
+        type = self._type_mapping[prototype]
+        bucket = self._data[type]
+        if id in bucket:
+            raise ValueError(f"ID {id} ({id:#x}) is already used for '{bucket[id]['name']}'")
+        entry = bucket[id] = Index.Entry(id, type, prototype, name)
+        return entry
+
+    def get(self, type: Type, id: int) -> Entry:
+        return self._data[type][id]
 
 
 ################################################################
@@ -131,6 +271,40 @@ def parse_migrations(stream, result):
         result["migrations"] = migrations
 
 
+def parse_index(stream, result):
+    index = Index()
+    index_dict = {}
+
+    prototype_count = stream.count16()
+    debug(f"used prototypes: {prototype_count}")
+    for p in range(prototype_count):
+        prototype_name = stream.string()
+        names = index_dict[prototype_name] = {}
+        if prototype_name == "tile":    # strange exception
+            name_count = stream.count8()
+            debug(f"    [{p}] prototype '{prototype_name}' - entries: {name_count}")
+            for n in range(name_count):
+                name_id = stream.u8()
+                name = stream.string()
+                debug(f"        [{n}] {name_id:02x} '{name}'")
+                names[name_id] = name
+                index.add(name_id, prototype_name, name)
+        else:
+            name_count = stream.count16()
+            debug(f"    [{p}] prototype '{prototype_name}' - entries: {name_count}")
+            for n in range(name_count):
+                name_id = stream.u16()
+                name = stream.string()
+                debug(f"        [{n}] {name_id:04x} '{name}'")
+                names[name_id] = name
+                index.add(name_id, prototype_name, name)
+
+    if index_dict and opt_x:
+        result["index"] = index_dict
+
+    return index
+
+
 ################################################################
 #
 # library -- primary objects
@@ -143,6 +317,8 @@ def parse_blueprint_library(stream: PrimitiveStream):
     read_unknown(stream)
 
     parse_migrations(stream, result)
+
+    global_index = parse_index(stream, result)
 
     return result
 
