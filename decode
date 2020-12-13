@@ -4,6 +4,7 @@ import argparse
 import sys
 import struct
 import json
+import time
 from enum import Enum
 
 
@@ -180,6 +181,12 @@ class PrimitiveStream:
     def tell(self):
         return self._f.tell()
 
+    def bool(self):
+        data = self.u8()
+        if data != 0x00 and data != 0x01:
+            raise ParseError(f"invalid boolean value {data:#04x} at position {self.tell()-1:#06x}")
+        return data == 0x01
+
     def s8(self):
         return self._read("<b")
 
@@ -233,6 +240,30 @@ class PrimitiveStream:
         return self._f.read(length).decode("utf-8")
 
 ################################################################
+#
+# stream helpers
+
+def read_entry(stream, index: Index, type: Index.Type) -> Index.Entry:
+    if type == Index.TILE:
+        id = stream.u8()
+    else:
+        id = stream.u16()
+
+    if id:
+        # FIXME: catch KeyError and supply a better error message
+        return index.get(type, id)
+    else:
+        return None
+
+
+def read_mapped8(stream, args):
+    index = stream.u8()
+    if index in range(len(args)):
+        return args[index]
+    else:
+        position = stream.tell() - 1
+        raise ParseError(f"unexpected value {index} at position {position}: only 0..{len(args)-1} expected")
+
 
 def read_unknown(stream: PrimitiveStream, *expected_bytes):
     if not expected_bytes:
@@ -312,6 +343,49 @@ def parse_index(stream, result):
     return index
 
 
+object_prototypes = (
+    "blueprint",
+    "blueprint-book",
+    "deconstruction-item",
+    "upgrade-item",
+)
+
+def parse_library_objects(stream, index, result):
+
+    object_count = stream.count32()
+    verbose(f"\nlibrary objects: {object_count}")
+    objects = []
+    for o in range(object_count):
+        is_used = stream.bool()
+        if is_used:
+            verbose(f"\n[{o}] library slot: used")
+
+            # Interesting: Here is a rare redundancy.
+            object_prototype_by_byte = read_mapped8(stream, object_prototypes)
+
+            # See _generation_counter_ in parse_blueprint_library for details.
+            generation = stream.u32()
+
+            entry = read_entry(stream, index, Index.ITEM)
+            if entry.prototype != object_prototype_by_byte:
+                raise ParseError(
+                    f"mismatch between content-type '{object_prototype_by_byte}'"
+                    f" and actual content item {entry.prototype}")
+
+            handler = object_handlers.get(entry.prototype, None)
+            if not handler:
+                raise ParseError(f"no handler for {entry.prototype}/{entry.name} ({entry.id:#x})")
+
+            handler_result = handler(stream, index)
+            handler_result["_generation_"] = generation
+            objects.append(handler_result)
+        else:
+            verbose(f"\n[{o}] library slot: free")
+            objects .append(None)
+
+    result["blueprints"] = objects
+
+
 ################################################################
 #
 # library -- primary objects
@@ -329,7 +403,50 @@ def parse_blueprint_library(stream: PrimitiveStream):
 
     read_unknown(stream, 0x00, 0x00)
 
+    # Adding a blueprint to the library increments the counter, deleting and moving does not.
+    # When a new blueprint is added to the library this global counter is copied to the new
+    # blueprint and incremened after that. This happens for each new blueprint, not per save.
+    generation_counter = stream.u32()
+    debug(f"generation counter: {generation_counter} ({generation_counter:#x})")
+    result["_generation_counter_"] = generation_counter
+
+    # unix timestamp
+    timestamp = stream.u32()    # u32/s32?
+    timestring = time.strftime("%FT%T%z", time.localtime(timestamp)) # localtime/gmtime?
+    # FIXME: use datetime.fromtimestamp(timestamp, timezone.utc) or something like that
+    debug(f"timestamp: {timestring}")
+    result["_save_timestamp_"] = timestring
+
+    read_unknown(stream, 0x01)
+
+    parse_library_objects(stream, global_index, result)
+
     return result
+
+
+def parse_blueprint(stream: PrimitiveStream, index):
+    raise NotImplementedError()
+
+
+def parse_blueprint_book(stream: PrimitiveStream, index):
+    raise NotImplementedError()
+
+
+def parse_deconstruction_item(stream: PrimitiveStream, index):
+    raise NotImplementedError()
+
+
+def parse_upgrade_item(stream: PrimitiveStream, index):
+    raise NotImplementedError()
+
+
+object_handlers = {
+    "blueprint": parse_blueprint,
+    "blueprint-book": parse_blueprint_book,
+    "deconstruction-item": parse_deconstruction_item,
+    "upgrade-item": parse_upgrade_item,
+}
+
 
 ################################################################
 #
