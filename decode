@@ -242,6 +242,18 @@ class PrimitiveStream:
         length = self.count()
         return self._f.read(length).decode("utf-8")
 
+    def dump_trailing_data(self):
+        def to_hex(s: str):
+            return " ".join([f'{b:02x}' for b in s])
+
+        position, data = self._f.tell(), self._f.read(16)
+        if data:
+            debug("trailing data:")
+            while data:
+                debug(f"{position:06x}", to_hex(data))
+                position, data = self._f.tell(), self._f.read(16)
+
+
 ################################################################
 #
 # stream helpers
@@ -296,6 +308,32 @@ def read_signal(stream, index: Index):
         return read_signal_new(stream, index)
 
 
+# circuit condition, logistic condition, train schedules
+def read_condition(stream, index: Index):
+    # same order in drop-down
+    comparator = read_mapped8(stream, (">", "<", "=", "≥", "≤", "≠"))
+
+    first_signal = read_signal(stream, index)
+    second_signal = read_signal(stream, index)
+    constant = stream.s32()
+    use_constant = stream.bool()
+
+    # hide "default" condition
+    if not first_signal and not second_signal and comparator == "<" and not constant:
+        return None
+
+    condition = {}
+    condition["first_signal"] = first_signal
+    condition["comparator"] = comparator
+    # The export does not output data if it is hidden in the UI.
+    if use_constant:
+        condition["constant"] = constant
+    else:
+        condition["second_signal"] = second_signal
+
+    return condition
+
+
 def read_mapped8(stream, args):
     index = stream.u8()
     if index in range(len(args)):
@@ -314,6 +352,14 @@ def read_unknown(stream: PrimitiveStream, *expected_bytes):
         if actual != expected:
             position = stream.tell()
             raise ParseError(f"expected {expected:#04x} but got {actual:#04x} at position {position} ({position:#x})")
+
+################################################################
+#
+# entity handlers (eh_*)
+
+
+entity_handlers = {
+}
 
 
 ################################################################
@@ -444,6 +490,161 @@ def parse_icons(stream, index, result):
         result["icons"] = icons
 
 
+def parse_snap_to_grid(stream, result):
+    snap_to_grid = stream.bool()
+    if snap_to_grid:
+        x = stream.u32()
+        y = stream.u32()
+        result["snap-to-grid"] = {
+            "x": x,
+            "y": y
+        }
+
+        absolute_snapping = stream.bool()
+        if absolute_snapping:
+            result["absolute-snapping"] = absolute_snapping
+
+def parse_entities(stream, index, result):
+    entities = result["entities"] = []
+
+    entity_count = stream.count32()
+    debug(f"entities: {entity_count}")
+    for e in range(entity_count):
+        file_position = stream.tell()
+
+        # type/name
+        entry = read_entry(stream, index, Index.ENTITY)
+
+        # position
+
+        # maybe helpfull: https://wiki.factorio.com/Data_types
+        # maybe helpfull: https://wiki.factorio.com/Types/Position
+        offset_x = stream.s16()     # lookahead
+        if offset_x == 0x7fff:
+            position = {
+                "x": stream.s32() / 256,
+                "y": stream.s32() / 256
+            }
+        else:
+            offset_y = stream.s16()
+            if entities:
+                last_position = entities[-1]["position"]
+                position = {
+                    "x": last_position["x"] + offset_x / 256,
+                    "y": last_position["y"] + offset_y / 256
+                }
+            else:
+                position = {
+                    "x": offset_x / 256,
+                    "y": offset_y / 256
+                }
+
+        # debug output
+        debug(f"    [{len(entities)}] @{file_position:#x} - "
+            f"x: {position['x']}, y: {position['y']}, "
+            f"'{entry.prototype}/{entry.name}'")
+
+        # attach entity
+        entity = {
+            "name": entry.name,
+            "position": position,
+        }
+        entities.append(entity)
+
+        # Strange: What is this?
+        read_unknown(stream, 0x20)
+
+        # parse entity details
+        handler = entity_handlers.get(entry.prototype, None)
+        if not handler:
+            raise ParseError(f"no entity handler for {entry.prototype}/{entry.name} ({entry.id:#x})")
+        handler(stream, index, entity)
+    
+    if not entities:
+        del result["entities"]
+
+
+def parse_schedules(stream, index, result):
+    schedules_count = stream.count8()
+    schedules = []
+    for sc in range(schedules_count):
+        schedule = {
+            "schedule": []
+        }
+
+        locomotives = schedule["locomotives"] = []
+        locomotive_count = stream.count8()
+        for lo in range(locomotive_count):
+            locomotive_id = stream.u32()
+            locomotives.append(locomotive_id)
+
+        station_count = stream.count8()
+        for st in range(station_count):
+            station = {
+                "station": stream.string(),
+                "wait_conditions": [],
+            }
+
+            wait_condition_count = stream.u32()
+            for wc in range(wait_condition_count):
+                wait_condition = {}
+
+                wait_condition_types = (
+                    "time",
+                    "full",
+                    "empty",
+                    "item_count",
+                    "circuit",
+                    "inactivity",
+                    None, # what is type 6?
+                    "fluid_count",
+                    "passenger_present",
+                    "passenger_not_present",
+                )
+                wait_condition["type"] = read_mapped8(stream, wait_condition_types)
+
+                wait_condition["compare_type"] = read_mapped8(stream, ("and", "or"))
+
+                ticks = stream.u16()
+                if ticks:
+                    # TODO: export features "ticks: 0" for "time" and "inactivity"
+                    wait_condition["ticks"] = ticks
+
+                read_unknown(stream, 0x00, 0x00)
+
+                condition = read_condition(stream, index)
+                if condition:
+                    wait_condition["condition"] = condition
+
+                station["wait_conditions"].append(wait_condition)
+
+            read_unknown(stream)
+
+            schedule["schedule"].append(station)
+
+        schedules.append(schedule)
+
+    if schedules:
+        result["schedules"] = schedules
+
+
+def parse_tiles(stream, index, result):
+    tiles = []
+    tile_count = stream.count32()
+    debug(f"tiles: {tile_count}")
+    for t in range(tile_count):
+        tiles.append({
+            "position": {
+                "x": stream.s32(),
+                "y": stream.s32()
+            },
+            "name": read_name(stream, index, Index.TILE)
+        })
+
+    if tiles:
+        result["tiles"] = tiles
+
+
 ################################################################
 #
 # library -- primary objects
@@ -503,9 +704,25 @@ def parse_blueprint(stream: PrimitiveStream, index):
     content_size = stream.u32()
     content_start = stream.tell()
 
-    # FIXME: don't break abstractions
-    stream._f.seek(content_size, 1)
-    print(f"## skipped {content_size} bytes in blueprint", file=sys.stderr)
+    parse_version(stream, result)
+
+    read_unknown(stream)
+
+    parse_migrations(stream, result)
+
+    result["description"] = stream.string()
+
+    parse_snap_to_grid(stream, result)
+
+    parse_entities(stream, index, result)
+
+    parse_schedules(stream, index, result)
+
+    parse_tiles(stream, index, result)
+
+    read_unknown(stream)
+
+    parse_icons(stream, index, result)
 
     content_end = stream.tell()
     parsed_size = content_end - content_start
