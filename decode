@@ -8,6 +8,9 @@ import time
 from enum import Enum
 
 
+PERL_LEGACY_FORMAT = True
+
+
 ################################################################
 #
 # utilities
@@ -256,6 +259,43 @@ def read_entry(stream, index: Index, type: Index.Type) -> Index.Entry:
         return None
 
 
+def read_name(stream, index: Index, type: Index.Type) -> Index.Entry:
+    entry = read_entry(stream, index, type)
+    if entry:
+        return entry.name
+    else:
+        return None
+
+
+def read_signal_new(stream, index: Index):
+    index_type = read_mapped8(stream, (Index.ITEM, Index.FLUID, Index.VSIGNAL))
+    entry = read_entry(stream, index, index_type)
+    if not entry:
+        return None
+    return {
+        "type": {Index.ITEM: "item", Index.FLUID: "fluid", Index.VSIGNAL: "virtual"}[index_type],
+        "name": entry.name
+    }
+
+
+def read_signal_compat(stream, index: Index):
+    index_type = read_mapped8(stream, (Index.ITEM, Index.FLUID, Index.VSIGNAL))
+    name = read_name(stream, index, index_type)
+    return {
+        "type": {Index.ITEM: "item", Index.FLUID: "fluid", Index.VSIGNAL: "virtual"}[index_type],
+        "name": name
+    }
+
+def read_signal(stream, index: Index):
+    # FIXME: The Perl version actually returns an "empty" signal for id 0x00.
+    #       The Python version returns None. The export seems to omit these
+    #       signals, so Python won't go back but wait.
+    if PERL_LEGACY_FORMAT:
+        return read_signal_compat(stream, index)
+    else:
+        return read_signal_new(stream, index)
+
+
 def read_mapped8(stream, args):
     index = stream.u8()
     if index in range(len(args)):
@@ -386,6 +426,24 @@ def parse_library_objects(stream, index, result):
     result["blueprints"] = objects
 
 
+def parse_icons(stream, index, result):
+    icons = []
+    icon_count = stream.count8()
+    if not icon_count:
+        return
+    debug(f"icons: {icon_count}")
+    for i in range(icon_count):
+        icon = read_signal(stream, index)
+        if icon:
+            debug(f"    [{i}] '{icon['type']}' / '{icon['name']}'")
+            icons.append(icon)
+        else:
+            debug(f"    [{i}] (none)")
+            icons.append(None)
+    if icons:
+        result["icons"] = icons
+
+
 ################################################################
 #
 # library -- primary objects
@@ -425,11 +483,66 @@ def parse_blueprint_library(stream: PrimitiveStream):
 
 
 def parse_blueprint(stream: PrimitiveStream, index):
-    raise NotImplementedError()
+    result = {
+        "item": "blueprint",
+    }
+
+    file_position = stream.tell()
+
+    label = result["label"] = stream.string()
+    verbose(f"blueprint '{label}' (@{file_position:#x})")
+
+    read_unknown(stream, 0x00, 0x00)
+
+    # might be "flexible size" marker for $content_size. But since the
+    # "migrations" section for 1.0.0.0 is already 347 bytes there is no
+    # way to check that.
+    read_unknown(stream, 0xff)
+    # Interesting: A rare redundancy. Could be used to fast skimming
+    # the library. Reasons: a) Speed, b) unparsable content due to mods/versions.
+    content_size = stream.u32()
+    content_start = stream.tell()
+
+    # FIXME: don't break abstractions
+    stream._f.seek(content_size, 1)
+    print(f"## skipped {content_size} bytes in blueprint", file=sys.stderr)
+
+    content_end = stream.tell()
+    parsed_size = content_end - content_start
+    if parsed_size != content_size:
+        raise AssertionError(f"mismatch between declared blueprint size ({content_size})"
+            f" and parsed size ({parsed_size})")
+
+    return result
 
 
 def parse_blueprint_book(stream: PrimitiveStream, index):
-    raise NotImplementedError()
+    result = {
+        "item": "blueprint-book",
+    }
+
+    file_position = stream.tell()
+
+    label = result["label"] = stream.string()
+    verbose(f"blueprint-book '{label}' (@{file_position:#x})")
+
+    result["description"] = stream.string()
+
+    read_unknown(stream)
+
+    parse_icons(stream, index, result)
+
+    parse_library_objects(stream, index, result)
+
+    active_index = stream.u8()
+    if active_index:
+        result["active_index"] = active_index
+
+    read_unknown(stream)
+
+    verbose(f"end of book '{label}' (@{stream.tell():#x})")
+
+    return result
 
 
 def parse_deconstruction_item(stream: PrimitiveStream, index):
