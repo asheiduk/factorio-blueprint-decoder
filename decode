@@ -1,17 +1,10 @@
 #!/usr/bin/python3
 
+import argparse
 import sys
 import struct
 import json
 from enum import Enum
-
-
-opt_x = False   # extended output: add voluminous stuff found in
-                # .dat but not used in .export. Currently:
-                #   - migrations (occur in every BP and BP book)
-                #   - prototype index
-opt_v = False   # verbose output on STDERR
-opt_d = True    # debug output on STDERR
 
 
 ################################################################
@@ -19,11 +12,11 @@ opt_d = True    # debug output on STDERR
 # utilities
 
 def debug(*args):
-    if opt_d:
+    if opt.d:
         print(*args, file=sys.stderr, flush=True)
 
 def verbose(*args):
-    if opt_v or opt_d:
+    if opt.v or opt.d:
         print(*args, file=sys.stderr, flush=True)
 
 
@@ -256,18 +249,18 @@ def parse_version(stream, result):
 def parse_migrations(stream, result):
     migrations = []
     migration_count = stream.count8()
-    if opt_x:
+    if opt.x:
         debug(f"migrations: {migration_count}")
     for m in range(migration_count):
         mod_name = stream.string()
         migration_file = stream.string()
-        if opt_x:
+        if opt.x:
             debug(f"    [{m}] mod '{mod_name}', migration '{migration_file}'")
         migrations.append({
             "mod_name": mod_name,
             "migration_file": migration_file
         })
-    if opt_x:
+    if opt.x:
         result["migrations"] = migrations
 
 
@@ -299,7 +292,7 @@ def parse_index(stream, result):
                 names[name_id] = name
                 index.add(name_id, prototype_name, name)
 
-    if index_dict and opt_x:
+    if index_dict and opt.x:
         result["index"] = index_dict
 
     return index
@@ -326,8 +319,19 @@ def parse_blueprint_library(stream: PrimitiveStream):
 #
 # main
 
-filename = "blueprint-storage.dat"
-verbose(f"file: {filename}")
-with open(filename, "rb") as f:
-    library = parse_blueprint_library(PrimitiveStream(f))
-    print(json.dumps(library, indent=4, sort_keys=True, ensure_ascii=False))
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-v", "--verbose", action="store_true", dest="v",
+        help="verbose output on STDERR")
+    parser.add_argument("-d", "--debug", action="store_true", dest="d",
+        help="debug output on STDERR")
+    parser.add_argument("-x", "--extended", action="store_true", dest="x",
+        help="extended output: add voluminous stuff found .dat but not used in .export"
+        " Currently:\n - migrations\n - prototype index")
+    parser.add_argument("filename", nargs="?", default="blueprint-storage.dat")
+    opt = parser.parse_args()
+
+    verbose(f"file: {opt.filename}")
+    with open(opt.filename, "rb") as f:
+        library = parse_blueprint_library(PrimitiveStream(f))
+        print(json.dumps(library, indent=4, sort_keys=True, ensure_ascii=False))
