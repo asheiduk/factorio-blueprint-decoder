@@ -313,7 +313,7 @@ sub read_ignore(*$;$){
 	read $fh, my ($data), $length;
 
 	$guess = " " . $guess if $guess;
-	debug "#\tignored%s @%04x: %s\n",
+	debug "#\tignored%s @%#4x: %s\n",
 		$guess,
 		$file_position,
 		join " ", map{ sprintf "%02x", $_ } unpack "C*", $data;
@@ -486,14 +486,10 @@ sub ep_entity_ids(*$$){
 	
 	if($flags1 & 0x10){
 		my @entity_ids;
-		# TODO: perhaps the "count" is not a count a kind of type like the type
-		# before signal ids in circuit conditions? But 0x01 would be "fluid".
-		my $id_count = read_count8($fh);
-		for(my $i=0; $i<$id_count; ++$i){
-			push @entity_ids, read_u32($fh);
-		}
-		$entity->{entity_ids} = \@entity_ids;
-		debug "\tentity-ids: %s\n", join(", ", @entity_ids);
+		read_unknown($fh, 0x01);
+		my $entity_id = read_u32($fh);
+		$entity->{entity_id} = $entity_id;
+		debug "\tentity-id: %s\n", $entity_id;
 		# TODO: in export "entity_"number" but "entity_id" in references.
 		# Also: EACH entity in the export has the number and entities are
 		# numbered 1..N. And there is only one - not an array.
@@ -2104,7 +2100,7 @@ sub read_entity(*$$$$){
 	# position
 	my ($x, $y) = read_position($fh, $last_x, $last_y);
 
-	debug "    [%d] \@%04x - x: %g, y: %g, '%s/%s'\n", $entity_index, $file_offset, $x, $y, $type_class, $type_name;
+	debug "    [%d] \@%#x - x: %g, y: %g, '%s/%s'\n", $entity_index, $file_offset, $x, $y, $type_class, $type_name;
 	my $entity = {
 		name => $type_name,
 		position => {
@@ -2142,6 +2138,10 @@ sub bp_version(*$$){
 		push @version, read_u16($fh);
 	}
 	debug "version: %s\n", join ".", @version;
+	if($opt_d){
+		# "join" made the numbers to strings
+		$_ = int($_) for (@version);
+	}
 	$result->{version} = \@version;
 }
 
@@ -2168,14 +2168,14 @@ sub bp_prototype_index(*){
 	my $result = Index->new;
 	
 	my $class_count = read_count16($fh);
-	debug "used prototype classes: %d\n", $class_count;
+	debug "used prototypes: %d\n", $class_count;
 	for(my $c=0; $c<$class_count; ++$c){
 	
 		my $class_name = read_string($fh);
 		my $proto_count = read_count8($fh);
 		
 		if( $class_name eq "tile" ){		# TODO: strange exception
-			debug "    [%d] class '%s' - entries: %d\n", $c, $class_name, $proto_count;
+			debug "    [%d] prototype '%s' - entries: %d\n", $c, $class_name, $proto_count;
 			for(my $p=0; $p<$proto_count; ++$p){
 				my $proto_id = read_u8($fh);
 				my $proto_name = read_string($fh);
@@ -2185,7 +2185,7 @@ sub bp_prototype_index(*){
 			}
 		}
 		else {
-			debug "    [%d] class '%s' - entries: %d\n", $c, $class_name, $proto_count;
+			debug "    [%d] prototype '%s' - entries: %d\n", $c, $class_name, $proto_count;
 			read_unknown($fh); 		# TODO: another strange exception: data between count and list
 			for(my $p=0; $p<$proto_count; ++$p){
 				my $proto_id = read_u16($fh);
@@ -2353,7 +2353,7 @@ sub bp_blueprints(*$$){
 	my $result = shift;
 	
 	my $blueprint_count = read_count32($fh);
-	verbose "\nblueprints: %d\n", $blueprint_count;
+	verbose "\nlibrary objects: %d\n", $blueprint_count;
 	my @blueprints;
 	for(my $b=0; $b<$blueprint_count; ++$b){
 		my $is_used = read_bool($fh);
@@ -2398,12 +2398,13 @@ sub read_upgrade_item(*$){
 	my $index = shift;
 	my $result = {};
 
+	my $file_position = $fh->tell();
 
 	$result->{item} = "upgrade-planner";
 	$result->{label} = read_string($fh);
 	$result->{settings}{description} = read_string($fh);
 	
-	verbose "upgrade-item '%s'\n", $result->{label};
+	verbose "upgrade-item '%s' (@%#x)\n", $result->{label}, $file_position;
 
 	read_unknown($fh);
 
@@ -2449,11 +2450,13 @@ sub read_deconstruction_item(*$){
 	my $index = shift;
 	my $result = {};
 
+	my $file_position = $fh->tell();
+
 	$result->{item} = "deconstruction-planner";
 	$result->{label} = read_string($fh);
 	$result->{settings}{description} = read_string($fh);
 
-	verbose "deconstruction-item '%s'\n", $result->{label};
+	verbose "deconstruction-item '%s' (@%#x)\n", $result->{label}, $file_position;
 
 	read_unknown($fh);
 	
@@ -2505,7 +2508,7 @@ sub read_blueprint(*$){
 	
 	$result->{item} = "blueprint";
 	$result->{label} = read_string($fh);
-	verbose "blueprint '%s' (@%04x)\n", $result->{label}, $file_position;
+	verbose "blueprint '%s' (@%#x)\n", $result->{label}, $file_position;
 
 	read_unknown($fh, 0x00, 0x00);
 
@@ -2567,7 +2570,7 @@ sub read_blueprint_book(*$){
 	$result->{item} = "blueprint-book";
 	$result->{label} = read_string($fh);
 	
-	verbose "blueprint-book '%s' (@%04x)\n", $result->{label}, $file_position;
+	verbose "blueprint-book '%s' (@%#x)\n", $result->{label}, $file_position;
 	
 	$result->{description} = read_string($fh);
 	read_unknown($fh);
@@ -2580,7 +2583,7 @@ sub read_blueprint_book(*$){
 	
 	read_unknown($fh, 0x00);
 
-	verbose "end of book '%s' (@%04x)\n", $result->{label}, tell $fh;
+	verbose "end of book '%s' (@%#x)\n", $result->{label}, tell $fh;
 	return $result;
 }
 
@@ -2651,6 +2654,7 @@ my $file = $ARGV[0] || "blueprint-storage.dat";
 verbose "file: %s\n", $file;
 open(my $fh, "<", $file) or die;
 my $library = read_blueprint_library($fh);
+delete $library->{prototypes} unless $opt_x;
 print to_json($library, {pretty => 1, convert_blessed => 1, canonical => 1});
 dump_trailing_data($fh);
 close($fh);
