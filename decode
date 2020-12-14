@@ -546,11 +546,104 @@ def parse_blueprint_book(stream: PrimitiveStream, index):
 
 
 def parse_deconstruction_item(stream: PrimitiveStream, index):
-    raise NotImplementedError()
+    def read_filter(section_name, type):
+        filters = []
+        filter_count = stream.u8()
+        debug(f"{section_name.replace('_', '-')}: {filter_count}")
+        for e in range(filter_count):
+            name = read_name(stream, index, type)
+            filters.append(name)
+        result["settings"][section_name] = filters
+
+    result = {
+        "item": "deconstruction-planner",
+        "settings": {},
+    }
+
+    file_position = stream.tell()
+
+    result["label"] = stream.string()
+    result["settings"]["description"] = stream.string()
+
+    verbose(f"deconstruction-item '{result['label']}' (@{file_position:#x})")
+
+    read_unknown(stream)
+
+    parse_icons(stream, index, result)
+
+    entity_filter_mode = stream.u8()
+    if entity_filter_mode:
+        result["settings"]["entity_filter_mode"] = entity_filter_mode
+
+    read_unknown(stream)
+
+    read_filter("entity_filters", Index.ENTITY)
+
+    trees_and_rocks_only = stream.bool()
+    if trees_and_rocks_only:
+        result["settings"]["trees_and_rocks_only"] = True
+
+    tile_filter_mode = stream.u8()
+    if tile_filter_mode:
+        result["settings"]["tile_filter_mode"] = tile_filter_mode
+
+    tile_selection_mode = stream.u8()
+    if tile_selection_mode:
+        result["settings"]["tile_selection_mode"] = tile_selection_mode
+
+    read_unknown(stream)
+
+    read_filter("tile_filters", Index.TILE)
+
+    return result
 
 
 def parse_upgrade_item(stream: PrimitiveStream, index):
-    raise NotImplementedError()
+    result = {
+        "item": "upgrade-planner",
+        "settings": {}
+    }
+
+    file_position = stream.tell()
+
+    result["label"] = stream.string()
+    result["settings"]["description"] = stream.string()
+
+    verbose(f"upgrade-item '{result['label']}' (@{file_position:#x})")
+
+    read_unknown(stream)
+
+    parse_icons(stream, index, result)
+
+    read_unknown(stream)
+
+    def reader():
+        type = read_mapped8(stream, (Index.ENTITY, Index.ITEM))
+        name = read_name(stream, index, type)
+        if name:
+            return {
+                "type": type.value,
+                "name": name
+            }
+        else:
+            return None
+
+    mappers = []
+    mapper_count = stream.count8()
+    for m in range(mapper_count):
+        # see read_signal but the types are different
+        _from = reader()
+        _to = reader()
+        if _from or _to:
+            mappers.append({
+                "from": _from,
+                "to": _to
+            })
+        else:
+            mappers.append(None)
+
+    result["settings"]["mappers"] = mappers
+    return result
 
 
 object_handlers = {
