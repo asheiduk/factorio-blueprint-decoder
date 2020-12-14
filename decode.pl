@@ -952,7 +952,7 @@ sub read_entity_pipe_to_ground_details(*$$){
 	my $index = shift;
 
 	read_unknown($fh);
-	ep_direction($$fh, $entity, $index);
+	ep_direction($fh, $entity, $index);
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00);
 }
 
@@ -962,7 +962,7 @@ sub read_entity_transport_belt_details(*$$){
 	my $index = shift;
 
 	ep_entity_ids($fh, $entity, $index);
-	ep_direction($$fh, $entity, $index);
+	ep_direction($fh, $entity, $index);
 
 	# circuit network connections
 	my $has_circuit_connections = read_bool($fh);
@@ -1001,7 +1001,7 @@ sub read_entity_underground_belt_details(*$$){
 	my $index = shift;
 
 	read_unknown($fh);
-	ep_direction($$fh, $entity, $index);
+	ep_direction($fh, $entity, $index);
 	my $is_output = read_bool($fh);
 	if($is_output){
 		$entity->{type} = "output";
@@ -1019,7 +1019,7 @@ sub read_entity_splitter_details(*$$){
 	my $index = shift;
 
 	read_unknown($fh);
-	ep_direction($$fh, $entity, $index);
+	ep_direction($fh, $entity, $index);
 
 	my $priorities = read_u8($fh);
 
@@ -1089,7 +1089,7 @@ sub read_mining_drill_details(*$$){
 	my $index = shift;
 
 	ep_entity_ids($fh, $entity, $index);
-	ep_direction($$fh, $entity, $index);
+	ep_direction($fh, $entity, $index);
 
 	read_unknown($fh, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 
