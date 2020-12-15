@@ -29,10 +29,11 @@ class ParseError(Exception):
 
 
 if PERL_LEGACY_FORMAT:
+    def normalize_number(number):
+        rounded = round(number)
+        return rounded if rounded == number else number
+
     def normalize_position(p):
-        def normalize_number(number):
-            rounded = round(number)
-            return rounded if rounded == number else number
         p["x"] = normalize_number(p["x"])
         p["y"] = normalize_number(p["y"])
 
@@ -1272,7 +1273,101 @@ def eh_constant_combinator(stream, index, entity):
     read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
 
 
+def eh_power_switch(stream, index, entity):
+    ep_entity_ids(stream, index, entity)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+    connections = {}
+
+    # Contrary to circuit-connections there is no counter/list and therefore
+    # at most one wire can connect to each side. On the other hand the
+    # export format has exactly lists in place. *shrug*
+    # On the other hand the switch misses one structural level. *sigh*
+    connection_cu0 = stream.u32()
+    if connection_cu0:
+        # Strange: Caps-key are unusual!
+        connections["Cu0"] = [
+            {
+                "entity_id": connection_cu0,
+                "wire_id": 0
+            }
+        ]
+
+    connection_cu1 = stream.u32()
+    if connection_cu1:
+        # Strange: Caps-key are unusual!
+        connections["Cu1"] = [
+            {
+                "entity_id": connection_cu1,
+                "wire_id": 0
+            }
+        ]
+
+    if connections:
+        entity["connections"] = connections
+
+    has_circuit_connections = stream.bool()
+    if has_circuit_connections:
+        # connections
+        ep_circuit_connections(stream, index, entity)
+
+        # condition
+        ep_circuit_condition(stream, index, entity)
+        ep_logistic_condition(stream, index, entity)
+
+        read_unknown(stream, 0x00, 0x00)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_programmable_speaker(stream, index, entity):
+    ep_entity_ids(stream, index, entity)
+
+    entity["parameters"] = {
+        "playback_volume": normalize_number(stream.f64()),
+        "playback_globally": stream.bool(),
+        "allow_polyphony": stream.bool(),
+    }
+
+    alert_parameters = entity["alert_parameters"] = {
+        "show_alert": stream.bool(),
+        "show_on_map": stream.bool(),
+        "icon_signal_id": read_signal(stream, index),
+        "alert_message": stream.string(),
+    }
+    if not alert_parameters["icon_signal_id"]:
+        del alert_parameters["icon_signal_id"]
+
+    has_circuit_connections = stream.bool()
+    if has_circuit_connections:
+        # connections
+        ep_circuit_connections(stream, index, entity)
+
+        # condition
+        ep_circuit_condition(stream, index, entity)
+
+        signal_value_is_pitch = stream.bool()
+
+        instrument_id = stream.u8()
+        read_unknown(stream, 0x00, 0x00, 0x00)  # perhaps u32?
+
+        note_id = stream.u8()
+        read_unknown(stream, 0x00, 0x00, 0x00)  # perhaps u32?
+
+        control_behavior = entity.setdefault("control_behavior", {})
+        control_behavior["circuit_parameters"] = {
+            "instrument_id": instrument_id,
+            "note_id": note_id,
+            "signal_value_is_pitch": signal_value_is_pitch,
+        }
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
 entity_handlers = {
+    # Logistics
     "container": eh_container,
     "logistic-container": eh_logistic_container,
     "infinity-container": eh_infinity_container,
@@ -1299,6 +1394,9 @@ entity_handlers = {
     "arithmetic-combinator": eh_arithmetic_combinator,
     "decider-combinator": eh_decider_combinator,
     "constant-combinator": eh_constant_combinator,
+    "power-switch": eh_power_switch,
+    "programmable-speaker": eh_programmable_speaker,
+    # Production
 }
 
 
