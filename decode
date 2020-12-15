@@ -849,6 +849,130 @@ def eh_pump(stream, index, entity):
     read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
 
 
+def eh_straight_rail(stream, index, entity):
+    read_unknown(stream)
+    ep_direction(stream, index, entity)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_curved_rail(stream, index, entity):
+    read_unknown(stream)
+    ep_direction(stream, index, entity)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_train_stop(stream, index, entity):
+    ep_entity_ids(stream, index, entity)
+
+    station = stream.string()
+    if station:
+        entity["station"] = station
+
+    ep_direction(stream, index, entity)
+
+    has_circuit_connections = stream.bool()
+    if has_circuit_connections:
+        # connections
+        ep_circuit_connections(stream, index, entity)
+
+        # circuit condition & logistic condition
+        ep_circuit_condition(stream, index, entity)
+        ep_logistic_condition(stream, index, entity)
+
+        read_unknown(stream, 0x00, 0x00)
+
+        circuit_enable_disable = stream.bool()
+        send_to_train = stream.bool()
+        read_from_train = stream.bool()
+        read_stopped_train = stream.bool()
+
+        control_behavior = entity.setdefault("control_behavior", {})
+        if read_from_train:
+            control_behavior["read_from_train"] = True
+        if circuit_enable_disable:
+            control_behavior["circuit_enable_disable"] = True
+
+        # "true" is the silent default
+        if not send_to_train:
+            control_behavior["send_to_train"] = False
+
+        # Why two flags (read_stopped_train and train_stopped_flag)?
+        if read_stopped_train:
+            control_behavior["read_stopped_train"] = True
+        train_stopped_flag = stream.bool()
+        train_stopped_signal = read_signal(stream, index)
+        if train_stopped_flag:
+            control_behavior["train_stopped_signal"] = train_stopped_signal
+
+        read_unknown(stream, 0x00, 0x00, 0x00, 0x00)
+
+    ep_color(stream, index, entity)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_rail_signal(stream, index, entity):
+    ep_entity_ids(stream, index, entity)
+    ep_direction(stream, index, entity)
+
+    has_circuit_connections = stream.bool()
+    if has_circuit_connections:
+        # connections
+        ep_circuit_connections(stream, index, entity)
+
+        control_behavior = entity.setdefault("control_behavior", {})
+
+        circuit_close_signal = stream.bool()
+        control_behavior["circuit_close_signal"] = circuit_close_signal
+
+        circuit_read_signal = stream.bool()
+        control_behavior["circuit_read_signal"] = circuit_read_signal
+
+        # TODO: similar to signals in roboport
+        def encode_color_signal(default_name, key):
+            value = read_signal(stream, index)
+            if value and (value["type"] != "virtual" or value["name"] != default_name):
+                control_behavior[key] = value
+
+        encode_color_signal("signal-red", "red_output_signal")
+        encode_color_signal("signal-yellow", "orange_output_signal")
+        encode_color_signal("signal-green", "green_output_signal")
+
+        ep_circuit_condition(stream, index, entity)
+
+        read_unknown(stream)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_rail_chain_signal(stream, index, entity):
+    ep_entity_ids(stream, index, entity)
+    ep_direction(stream, index, entity)
+
+    has_circuit_connections = stream.bool()
+    if has_circuit_connections:
+        # connections
+        ep_circuit_connections(stream, index, entity)
+
+        control_behavior = entity.setdefault("control_behavior", {})
+
+        # TODO: similar to signals in roboport
+        def encode_color_signal(default_name, key):
+            value = read_signal(stream, index)
+            if value and (value["type"] != "virtual" or value["name"] != default_name):
+                control_behavior[key] = value
+
+        encode_color_signal("signal-red", "red_output_signal")
+        encode_color_signal("signal-yellow", "orange_output_signal")
+        encode_color_signal("signal-green", "green_output_signal")
+        encode_color_signal("signal-blue", "blue_output_signal")
+
+        if not control_behavior:
+            del entity["control_behavior"]
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
 entity_handlers = {
     "container": eh_container,
     "logistic-container": eh_logistic_container,
@@ -862,6 +986,11 @@ entity_handlers = {
     "pipe": eh_pipe,
     "pipe-to-ground": eh_pipe_to_ground,
     "pump": eh_pump,
+    "straight-rail": eh_straight_rail,
+    "curved-rail": eh_curved_rail,
+    "train-stop": eh_train_stop,
+    "rail-signal": eh_rail_signal,
+    "rail-chain-signal": eh_rail_chain_signal,
 }
 
 
