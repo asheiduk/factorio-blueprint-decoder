@@ -375,6 +375,32 @@ def ep_entity_ids(stream, index, entity):
         # numbered 1..N.
 
 
+def ep_bar(stream, index, entity):
+    # "Warehousing Mod" writes 2000 stacks but the UI reports 1800.
+    bar = stream.u16()
+    # The export format suppresses the default values. But these
+    # are - in general - unknown to me beyond the vanilla chests.
+    bar_defaults = {
+        # container
+        "wooden-chest" : 0x10,
+        "iron-chest"   : 0x20,
+        "steel-chest"  : 0x30,
+        # logistic-container
+        "logistic-chest-active-provider"	: 0x30,
+        "logistic-chest-passive-provider"	: 0x30,
+        "logistic-chest-storage"	: 0x30,
+        "logistic-chest-requester"	: 0x30,
+        "logistic-chest-buffer"		: 0x30,
+        # cheat mode
+        "infinity-chest" : 0x30,
+        # trains
+        "cargo-wagon"	 : 0x28,
+    }
+    default_bar = bar_defaults.get(entity["name"], None)
+    if not default_bar or default_bar != bar:
+        entity["bar"] = bar
+
+
 # maybe helpfull: https://wiki.factorio.com/Types/Direction
 def ep_direction(stream, index, entity):
     direction = stream.u8()
@@ -480,6 +506,115 @@ def ep_color(stream, index, entity):
 #
 # entity handlers (eh_*)
 
+def eh_container(stream, index, entity):
+
+    # entity ids
+    ep_entity_ids(stream, index, entity)
+
+    # restriction aka. "bar"
+    ep_bar(stream, index, entity)
+
+    # circuit connections
+    has_circuit_connections = stream.bool()
+    if has_circuit_connections:
+        ep_circuit_connections(stream, index, entity)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_logistic_container(stream, index, entity):
+
+    # entity ids
+    ep_entity_ids(stream, index, entity)
+
+    # restriction aka. "bar"
+    ep_bar(stream, index, entity)
+
+    read_unknown(stream, 0x00)
+    read_unknown(stream, 0x01)
+
+    logistic_mode = stream.u8()  # not used in export
+    if not 0 <= logistic_mode <= 5:
+        raise ParseError(f"unknown logistic mode {logistic_mode}")
+
+    read_unknown(stream, 0x03)
+
+    request_filters = []
+    filter_count = stream.count8()
+    for f in range(filter_count):
+        item_name = read_name(stream, index, Index.ITEM)
+        item_count = stream.u32()
+        read_unknown(stream)
+        if item_name:
+            request_filters.append({
+                "name": item_name,
+                "count": item_count
+            })
+        else:
+            request_filters.append(None)
+    if filter_count > 0:
+        # Strange: First occurance of the pattern that the list size affects
+        # the presence/absence of data after the list.
+        request_from_buffers = stream.bool()
+        if request_from_buffers:
+            entity["request_from_buffers"] = True
+
+    # TODO: export compresses the filter list
+    if request_filters:
+        entity["request_filters"] = request_filters
+
+    read_unknown(stream, 0x00, 0x00)
+
+    # circuit connections
+    has_circuit_connections = stream.bool()
+    if has_circuit_connections:
+        ep_circuit_connections(stream, index, entity)
+        # strange: is this some padding?
+        read_unknown(stream)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_infinity_container(stream, index, entity):
+
+    # entity ids
+    ep_entity_ids(stream, index, entity)
+
+    # restriction aka. "bar"
+    ep_bar(stream, index, entity)
+
+    read_unknown(stream, 0x00, 0x00)
+
+    # circuit connections
+    has_circuit_connections = stream.bool()
+    if has_circuit_connections:
+        ep_circuit_connections(stream, index, entity)
+        # strange: is this some padding?
+        read_unknown(stream)
+
+    # infinity settings
+    entity["infinity_settings"] = {}
+
+    filters = []
+    filter_count = stream.count8()
+    for f in range(filter_count):
+        item_name = read_name(stream, index, Index.ITEM)
+        item_count = stream.u32()
+        mode = read_mapped8(stream, ("at-least", "at-most", "exactly"))
+        filters.append({
+            "name": item_name,
+            "count": item_count,
+            "mode": mode
+        })
+    if filters:
+        entity["infinity_settings"]["filters"] = filters
+
+    remove_unfiltered_items = stream.bool()
+    entity["infinity_settings"]["remove_unfiltered_items"] = remove_unfiltered_items
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
 def eh_inserter(stream, index, entity):
     # entity ids
     ep_entity_ids(stream, index, entity)
@@ -569,6 +704,9 @@ def eh_pipe_to_ground(stream, index, entity):
 
 
 entity_handlers = {
+    "container": eh_container,
+    "logistic-container": eh_logistic_container,
+    "infinity-container": eh_infinity_container,
     "inserter": eh_inserter,
     "pipe": eh_pipe,
     "pipe-to-ground": eh_pipe_to_ground,
