@@ -354,6 +354,20 @@ def read_unknown(stream: PrimitiveStream, *expected_bytes):
             raise ParseError(f"expected {expected:#04x} but got {actual:#04x} at position {position} ({position:#x})")
 
 
+def read_ignore(stream: PrimitiveStream, size, guess=None):
+    file_position = stream.tell()
+    # FIXME: don't do this:
+    data = stream._f.read(size)
+    # data = " ".join( data.m)
+
+    data = " ".join([ hex(b).replace("0x", "") for b, in struct.iter_unpack("B", data) ])
+
+    if guess:
+        debug(f"#\tignored {guess} @{file_position:#x}: {data}")
+    else:
+        debug(f"#\tignored @{file_position:#x}: {data}")
+
+
 ################################################################
 #
 # entity parts (ep_*)
@@ -408,6 +422,12 @@ def ep_direction(stream, index, entity):
         entity["direction"] = direction
 
 
+def ep_orientation(stream, index, entity):
+    orientation = stream.f32()
+    if orientation:
+        entity["orientation"] = orientation
+
+
 def ep_circuit_connections(stream, index, entity, own_circuit_id="1"):
     connections = {}
 
@@ -458,6 +478,22 @@ def ep_logistic_condition(stream, index, entity):
     else:
         if "control_behavior" in entity:
             entity["control_behavior"].pop("logistic_condition", None)
+
+def ep_railway_vehicle_common(stream, index, entity):
+    read_unknown(stream, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x01)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+    # 26 22 4f
+    # e7 73 ed
+    # ac d3 65
+    read_ignore(stream, 3, "train-id(?)")
+
+    read_unknown(stream, 0x00, 0x00)
+
 
 def ep_filters(stream, index, entity):
     # Even without filters the count is > 0 for filter-inserters.
@@ -973,6 +1009,82 @@ def eh_rail_chain_signal(stream, index, entity):
     read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
 
 
+def eh_locomotive(stream, index, entity):
+    ep_entity_ids(stream, index, entity)
+    read_unknown(stream)
+
+    ep_orientation(stream, index, entity)
+
+    ep_railway_vehicle_common(stream, index, entity)
+
+    ep_color(stream, index, entity)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+    # fuel
+    ep_items(stream, index, entity)
+
+    read_unknown(stream)
+
+
+def eh_cargo_wagon(stream, index, entity):
+    read_unknown(stream, 0x00, 0x00)
+    ep_orientation(stream, index, entity)
+
+    ep_railway_vehicle_common(stream, index, entity)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+    ep_filters(stream, index, entity)
+
+    ep_bar(stream, index, entity)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_fluid_wagon(stream, index, entity):
+    read_unknown(stream, 0x00, 0x00)
+    ep_orientation(stream, index, entity)
+
+    ep_railway_vehicle_common(stream, index, entity)
+
+    read_unknown(stream,0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream,0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream,0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream,0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream,0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_artillery_wagon(stream, index, entity):
+    read_unknown(stream, 0x00, 0x00)
+    ep_orientation(stream, index, entity)
+
+    ep_railway_vehicle_common(stream, index, entity)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x80, 0x3f) # 1.0f
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0xff, 0x7f) # s16: max. positive value
+    read_unknown(stream, 0xff, 0xff, 0xff, 0x7f) # s32: max. positive value
+    read_unknown(stream, 0xff, 0xff, 0xff, 0x7f) # s32: max. positive value
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0xff, 0xff, 0xff, 0x7f) # s32: max. positive value
+    read_unknown(stream, 0xff, 0xff, 0xff, 0x7f) # s32: max. positive value
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x03)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x01, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x80, 0x3f) # 1.0f
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
 entity_handlers = {
     "container": eh_container,
     "logistic-container": eh_logistic_container,
@@ -991,6 +1103,10 @@ entity_handlers = {
     "train-stop": eh_train_stop,
     "rail-signal": eh_rail_signal,
     "rail-chain-signal": eh_rail_chain_signal,
+    "locomotive": eh_locomotive,
+    "cargo-wagon" : eh_cargo_wagon,
+    "fluid-wagon": eh_fluid_wagon,
+    "artillery-wagon": eh_artillery_wagon,
 }
 
 
