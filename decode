@@ -271,12 +271,17 @@ class PrimitiveStream:
 def read_entry(stream, index: Index, type: Index.Type) -> Index.Entry:
     if type == Index.TILE:
         id = stream.u8()
+        offset = 1
     else:
         id = stream.u16()
+        offset = 2
 
     if id:
-        # FIXME: catch KeyError and supply a better error message
-        return index.get(type, id)
+        try:
+            return index.get(type, id)
+        except KeyError:
+            position = stream.tell() - offset
+            raise ParseError(f"unknown '{type.value}' ID {id:#x} at {position:#x}") from None
     else:
         return None
 
@@ -291,12 +296,12 @@ def read_name(stream, index: Index, type: Index.Type) -> Index.Entry:
 
 def read_signal_new(stream, index: Index):
     index_type = read_mapped8(stream, (Index.ITEM, Index.FLUID, Index.VSIGNAL))
-    entry = read_entry(stream, index, index_type)
-    if not entry:
+    name = read_name(stream, index, index_type)
+    if not name:
         return None
     return {
         "type": {Index.ITEM: "item", Index.FLUID: "fluid", Index.VSIGNAL: "virtual"}[index_type],
-        "name": entry.name
+        "name": name
     }
 
 
@@ -1824,6 +1829,9 @@ def parse_library_objects(stream, index, result):
             generation = stream.u32()
 
             entry = read_entry(stream, index, Index.ITEM)
+            if not entry:
+                raise ParseError(f"found item ID 0x0000 at {stream.tell()-2:#x} where a real ID is required.")
+
             if entry.prototype != object_prototype_by_byte:
                 raise ParseError(
                     f"mismatch between content-type '{object_prototype_by_byte}'"
@@ -1885,6 +1893,8 @@ def parse_entities(stream, index, result):
 
         # type/name
         entry = read_entry(stream, index, Index.ENTITY)
+        if not entry:
+            raise ParseError(f"found entity ID 0x0000 at {stream.tell()-2:#x} where a real ID is required.")
 
         # position
 
@@ -2012,6 +2022,7 @@ def parse_tiles(stream, index, result):
                 "x": stream.s32(),
                 "y": stream.s32()
             },
+            # FIXME: guard against 0x00 IDs
             "name": read_name(stream, index, Index.TILE)
         })
 
