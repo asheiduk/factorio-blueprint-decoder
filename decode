@@ -615,6 +615,94 @@ def eh_infinity_container(stream, index, entity):
     read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
 
 
+def eh_transport_belt(stream, index, entity):
+
+    ep_entity_ids(stream, index, entity)
+    ep_direction(stream, index, entity)
+
+    # circuit network connections
+    has_circuit_connections = stream.bool()
+    if has_circuit_connections:
+
+        # connections
+        ep_circuit_connections(stream, index, entity)
+
+        # circuit condition & logistic condition
+        ep_circuit_condition(stream, index, entity)
+        ep_logistic_condition(stream, index, entity)
+
+        read_unknown(stream, 0x00, 0x00)
+
+        # mode of operation (specific for transport-belt)
+        # maybe helpfull: https://lua-api.factorio.com/latest/defines.html#defines.control_behavior
+        control_behavior = entity.setdefault("control_behavior", {})
+
+        circuit_enable_disable = stream.bool()
+        control_behavior["circuit_enable_disable"] = circuit_enable_disable
+
+        circuit_read_hand_contents = stream.bool()
+        control_behavior["circuit_read_hand_contents"] = circuit_read_hand_contents
+
+        circuit_contents_read_mode = stream.u8()
+        control_behavior["circuit_contents_read_mode"] = circuit_contents_read_mode
+
+        # really strange stuff
+        read_unknown(stream, 0xff, 0xff, 0xff, 0xff)
+        read_unknown(stream, 0xff, 0xff, 0xff, 0xff)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_underground_belt(stream, index, entity):
+    read_unknown(stream)
+    ep_direction(stream, index, entity)
+    type = read_mapped8(stream, ("input", "output"))
+    entity["type"] = type
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_splitter(stream, index, entity):
+    read_unknown(stream)
+    ep_direction(stream, index, entity)
+
+    priorities = stream.u8()
+
+    # "explanation": masks
+    # => 0x10	-> output prio enabled
+    # => 0x20	-> input priority enabled
+    # => 0x0c	-> input priority left
+    # => 0x03	-> output priority left
+    # strange thing: why two bits for both 0x0c and 0x03?
+
+    priority_mapping = {
+        0x00 : [None, None],
+        0x10 : [None, "right"],
+        0x13 : [None, "left"],
+        0x20 : ["right", None],
+        0x2c : ["left", None],
+        0x30 : ["right", "right"],
+        0x33 : ["right", "left"],
+        0x3c : ["left", "right"],
+        0x3f : ["left", "left"]
+    }
+
+    mapped_priorities = priority_mapping[priorities]
+    if not mapped_priorities:
+        raise ParseError(f"unexpected splitter priority code {priorities:#04x}")
+    input_priority, output_priority = mapped_priorities
+
+    if input_priority:
+        entity["input_priority"] = input_priority
+    if output_priority:
+        entity["output_priority"] = output_priority
+
+    filter_name = read_name(stream, index, Index.ITEM)
+    if filter_name:
+        entity["filter"] = filter_name
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
 def eh_inserter(stream, index, entity):
     # entity ids
     ep_entity_ids(stream, index, entity)
@@ -707,6 +795,9 @@ entity_handlers = {
     "container": eh_container,
     "logistic-container": eh_logistic_container,
     "infinity-container": eh_infinity_container,
+    "transport-belt": eh_transport_belt,
+    "underground-belt": eh_underground_belt,
+    "splitter": eh_splitter,
     "inserter": eh_inserter,
     "pipe": eh_pipe,
     "pipe-to-ground": eh_pipe_to_ground,
