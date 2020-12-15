@@ -28,6 +28,15 @@ class ParseError(Exception):
     pass
 
 
+if PERL_LEGACY_FORMAT:
+    def normalize_position(p):
+        def normalize_number(number):
+            rounded = round(number)
+            return rounded if rounded == number else number
+        p["x"] = normalize_number(p["x"])
+        p["y"] = normalize_number(p["y"])
+
+
 ################################################################
 #
 # Index
@@ -827,6 +836,10 @@ def eh_inserter(stream, index, entity):
             "y": stream.f64()
         }
 
+        if PERL_LEGACY_FORMAT:
+            normalize_position(entity["drop_position"])
+            normalize_position(entity["pickup_position"])
+
     read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
 
 
@@ -1286,6 +1299,9 @@ def parse_entities(stream, index, result):
                     "x": offset_x / 256,
                     "y": offset_y / 256
                 }
+
+        if PERL_LEGACY_FORMAT:
+            normalize_position(position)
 
         # debug output
         debug(f"    [{len(entities)}] @{file_position:#x} - "
