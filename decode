@@ -353,12 +353,225 @@ def read_unknown(stream: PrimitiveStream, *expected_bytes):
             position = stream.tell()
             raise ParseError(f"expected {expected:#04x} but got {actual:#04x} at position {position} ({position:#x})")
 
+
+################################################################
+#
+# entity parts (ep_*)
+
+
+def ep_entity_ids(stream, index, entity):
+    flags = stream.u8()
+    # 0x10	-- has entity id (default=0)
+    if flags | 0x10 != 0x10:
+        raise ParseError(f"unexpected flags {flags:#04x} at position {stream.tell()-1:#x}")
+
+    if flags & 0x10:
+        read_unknown(stream, 0x01)
+        entity_id = stream.u32()
+        entity["entity_id"] = entity_id
+        debug(f"\tentity-id: {entity_id}")
+        # TODO: in export "entity_"number" but "entity_id" in references.
+        # Also: EACH entity in the export has the number and entities are
+        # numbered 1..N.
+
+
+# maybe helpfull: https://wiki.factorio.com/Types/Direction
+def ep_direction(stream, index, entity):
+    direction = stream.u8()
+    if direction:
+        entity["direction"] = direction
+
+
+def ep_circuit_connections(stream, index, entity, own_circuit_id="1"):
+    connections = {}
+
+    # How many "colors"?
+    # https://lua-api.factorio.com/latest/defines.html#defines.wire_type
+    for color in ("red", "green"):
+        peers = []
+        peer_count = stream.count8()
+        for p in range(peer_count):
+            entity_id = stream.u32()
+            circuit_id = stream.u8()
+            peers.append({
+                "entity_id": entity_id,
+                # TODO: skip "circuit_id" for "simple" circuits
+                "circuit_id": circuit_id
+            })
+            read_unknown(stream, 0xff)
+        if peers:
+            connections[color] = peers
+
+    # maybe helpfull: https://lua-api.factorio.com/latest/defines.html#defines.circuit_connector_id
+
+    if connections:
+        if "connections" not in entity:
+            entity["connections"] = {}
+        entity["connections"][str(own_circuit_id)] = connections
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def ep_circuit_condition(stream, index, entity):
+    circuit_condition = read_condition(stream, index)
+    if circuit_condition:
+        control_behavior = entity.setdefault("control_behavior", {})
+        control_behavior["circuit_condition"] = circuit_condition
+
+
+def ep_logistic_condition(stream, index, entity):
+    logistic_condition = read_condition(stream, index)
+    if logistic_condition:
+        control_behavior = entity.setdefault("control_behavior", {})
+        control_behavior["logistic_condition"] = logistic_condition
+
+    logistic_connected = stream.bool()
+    if logistic_connected:
+        control_behavior = entity.setdefault("control_behavior", {})
+        control_behavior["connect_to_logistic_network"] = True
+    else:
+        if "control_behavior" in entity:
+            entity["control_behavior"].pop("logistic_condition", None)
+
+def ep_filters(stream, index, entity):
+    # Even without filters the count is > 0 for filter-inserters.
+    filter_count = stream.u8()
+    if not filter_count:
+        return
+
+    filters = []
+    for f in range(filter_count):
+        filter_name = read_name(stream, index, Index.ITEM)
+        filters.append(filter_name)
+    entity["filters"] = filters
+    # TODO: The export file suppresses an empty list (or a list with only None entries).
+    # TODO: The export also uses a map, not an array, hence the items have an additional index field.
+
+
+def ep_items(stream, index, entity):
+
+    # Interesting point: Modules are not a simple list like icons.
+    # Instead the modules are first sorted and then grouped by type.
+    # So building an assembler with modules Eff1, Sp1, Eff1, Sp1 the blueprint
+    # only contains the data "Sp1: 2, Eff:2". So some details are omitted.
+
+    items = {}
+    item_count = stream.u32()
+    for i in range(item_count):
+        item_name = read_name(stream, index, Index.ITEM)
+        item_count = stream.u32()
+        items[item_name] = item_count
+    if items:
+        entity["items"] = items
+
+
+def ep_color(stream, index, entity):
+    use_colors = stream.bool()
+    if use_colors:
+        entity["colors"] = {
+            "r": stream.f32(),
+            "g": stream.f32(),
+            "b": stream.f32(),
+            "a": stream.f32()
+        }
+
+
 ################################################################
 #
 # entity handlers (eh_*)
 
+def eh_inserter(stream, index, entity):
+    # entity ids
+    ep_entity_ids(stream, index, entity)
+
+    # 0x01 -- override_stack_size
+    # 0x02 -- filter_mode: 0=blacklist, 1(default)=whitelist
+    # 0x04 -- TODO - unknown - default=1(?)
+    # others: TODO - unknown - default=0(?)
+    flags = stream.u8()
+    if flags | 0x03 != 0x07:
+        raise ParseError(f"unexpected flag {flags:#04x} at position {stream.tell()-1:#x}")
+
+    # direction
+    ep_direction(stream, index, entity)
+
+    # override stack size
+    if flags & 0x01:
+        entity["override_stack_size"] = stream.u8()
+
+    # circuit network connections
+    has_circuit_connections = stream.bool()
+    if has_circuit_connections:
+        # connections
+        ep_circuit_connections(stream, index, entity)
+
+        # circuit condition & logistic condition
+        ep_circuit_condition(stream, index, entity)
+        ep_logistic_condition(stream, index, entity)
+
+        read_unknown(stream, 0x00, 0x00)
+
+        # mode of operation
+
+        control_behavior = entity.setdefault("control_behavior", {})
+
+        # maybe helpfull: https://lua-api.factorio.com/latest/defines.html#defines.control_behavior
+        mode_of_operation = stream.u8()
+        if mode_of_operation:
+            control_behavior["circuit_mode_of_operation"] = mode_of_operation
+
+        read_hand_flag = stream.bool()
+        read_hand_mode = stream.bool() # not a bool but only 0/1 allowed
+        if read_hand_flag:
+            control_behavior["circuit_read_hand_contents"] = True
+        if read_hand_mode:
+            control_behavior["circuit_hand_read_mode"] = 1
+
+        set_stack_size = stream.bool()
+        if set_stack_size:
+            control_behavior["circuit_set_stack_size"] = True
+        stack_control_input_signal = read_signal(stream, index)
+        if stack_control_input_signal:
+            control_behavior["stack_control_input_signal"] = stack_control_input_signal
+
+        # End of "mode of operation"
+
+    # item filters
+    ep_filters(stream, index, entity)
+
+    if not flags & 0x02:
+        entity["filter_mode"] = "blacklist"
+
+    # pickup/drop position
+    is_miniloader = stream.bool()
+    if is_miniloader:
+        # examples: miniloader mod
+        entity["drop_position"] = {
+            "x": stream.f64(),
+            "y": stream.f64()
+        }
+        entity["pickup_position"] = {
+            "x": stream.f64(),
+            "y": stream.f64()
+        }
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_pipe(stream, index, entity):
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_pipe_to_ground(stream, index, entity):
+    read_unknown(stream)
+    ep_direction(stream, index, entity)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
 
 entity_handlers = {
+    "inserter": eh_inserter,
+    "pipe": eh_pipe,
+    "pipe-to-ground": eh_pipe_to_ground,
 }
 
 
