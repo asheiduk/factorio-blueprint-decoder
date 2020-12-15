@@ -1098,6 +1098,180 @@ def eh_artillery_wagon(stream, index, entity):
     read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
 
 
+def eh_roboport(stream, index, entity):
+    ep_entity_ids(stream, index, entity)
+
+    has_circuit_connections = stream.bool()
+    if has_circuit_connections:
+        # connections
+        ep_circuit_connections(stream, index, entity)
+
+        control_behavior = {}
+
+        # flags and signals
+        read_logistics = stream.bool()
+        if not read_logistics:
+            control_behavior["read_logistics"] = False
+
+        read_robot_stats = stream.bool()
+        if read_robot_stats:
+            control_behavior["read_robot_stats"] = True
+
+        def roboport_signal(default_signal, key):
+            signal = read_signal(stream, index)
+            # map None to a special "empty" signal
+            if not signal:
+                signal = { "type": "item" }
+            # default_signal is not written
+            if read_robot_stats and signal != { "type": "virtual", "name": default_signal }:
+                control_behavior[key] = signal
+
+        roboport_signal("signal-X", "available_logistic_output_signal")
+        roboport_signal("signal-Y", "total_logistic_output_signal")
+        roboport_signal("signal-Z", "available_construction_output_signal")
+        roboport_signal("signal-T", "total_construction_output_signal")
+
+        if control_behavior:
+            entity["control_behavior"] = control_behavior
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_lamp(stream, index, entity):
+    ep_entity_ids(stream, index, entity)
+    has_circuit_connections = stream.bool()
+    if has_circuit_connections:
+        #connections
+        ep_circuit_connections(stream, index, entity)
+
+        ep_circuit_condition(stream, index, entity)
+        ep_logistic_condition(stream, index, entity)
+
+        read_unknown(stream, 0x00, 0x00)
+
+        use_colors = stream.bool()
+        if use_colors:
+            control_behavior = entity.setdefault("control_behavior", {})
+            control_behavior["use_colors"] = True
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_arithmetic_combinator(stream, index, entity):
+    ep_entity_ids(stream, index, entity)
+    ep_direction(stream, index, entity)
+
+    # connections
+    ep_circuit_connections(stream, index, entity, "1")
+    ep_circuit_connections(stream, index, entity, "2")
+
+    # condition
+    first_signal = read_signal(stream, index)
+    second_signal = read_signal(stream, index)
+    output_signal = read_signal(stream, index)
+    second_constant = stream.s32()
+    operation = read_mapped8(stream, ("*", "/", "+", "-", "%", "^", "<<", ">>", "AND", "OR", "XOR"))
+    use_second_constant = stream.bool()
+    first_constant = stream.s32()
+    use_first_constant = stream.bool()
+
+    control_behavior = entity["control_behavior"] = {}
+    conditions =  control_behavior["arithmetic_conditions"] = {}
+
+    conditions["operation"] = operation
+
+    if use_first_constant:
+        conditions["first_constant"] = first_constant
+    elif first_signal:
+        conditions["first_signal"] = first_signal
+
+    if use_second_constant:
+        conditions["second_constant"] = second_constant
+    elif second_signal:
+        conditions["second_signal"] = second_signal
+
+    if output_signal:
+        conditions["output_signal"] = output_signal
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_decider_combinator(stream, index, entity):
+    ep_entity_ids(stream, index, entity)
+    ep_direction(stream, index, entity)
+
+    # connections
+    ep_circuit_connections(stream, index, entity, "1")
+    ep_circuit_connections(stream, index, entity, "2")
+
+    # condition
+    first_signal = read_signal(stream, index)
+    second_signal = read_signal(stream, index)
+    output_signal = read_signal(stream, index)
+    second_constant = stream.s32()
+    comparator = read_mapped8(stream, (">", "<", "=", "≥", "≤", "≠"))
+
+    copy_count_from_input = stream.bool()
+    use_constant = stream.bool()
+
+    control_behavior = entity["control_behavior"] = {}
+    conditions = control_behavior["decider_conditions"] = {}
+
+    conditions["comparator"] = comparator
+    if first_signal:
+        conditions["first_signal"] = first_signal
+
+    if use_constant:
+        conditions["constant"] = second_constant
+    elif second_signal:
+        conditions["second_signal"] = second_signal
+
+    if output_signal:
+        conditions["output_signal"] = output_signal
+
+    conditions["copy_count_from_input"] = copy_count_from_input
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_constant_combinator(stream, index, entity):
+    # entity ids
+    ep_entity_ids(stream, index, entity)
+
+    # circuit connections
+    ep_circuit_connections(stream, index, entity)
+
+    control_behavior = None
+
+    # filters
+    filters = []
+    filter_count = stream.count32()
+    for f in range(filter_count):
+        signal = read_signal(stream, index)
+        count = stream.s32()
+        if signal:
+            filters.append({
+                "signal": signal,
+                "count": count
+            })
+        else:
+            filters.append(None)
+    if filters:
+        control_behavior = entity.setdefault("control_behavior", {})
+        # Export: Why "filter"? These are not filters.
+        # TODO: suppress empty signal list.
+        control_behavior["filters"] = filters
+
+    is_on = stream.bool()
+    if not is_on:
+        control_behavior = entity.setdefault("control_behavior", {})
+        control_behavior["is_on"] = False
+
+    ep_direction(stream, index, entity)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
 entity_handlers = {
     "container": eh_container,
     "logistic-container": eh_logistic_container,
@@ -1120,6 +1294,11 @@ entity_handlers = {
     "cargo-wagon" : eh_cargo_wagon,
     "fluid-wagon": eh_fluid_wagon,
     "artillery-wagon": eh_artillery_wagon,
+    "roboport": eh_roboport,
+    "lamp": eh_lamp,
+    "arithmetic-combinator": eh_arithmetic_combinator,
+    "decider-combinator": eh_decider_combinator,
+    "constant-combinator": eh_constant_combinator,
 }
 
 
