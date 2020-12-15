@@ -55,9 +55,20 @@ test: $(parsable_dats:.dat=.out)
 clean:
 	-rm -f *.out *.err
 	-rm -f *.json
+	-rm -f *.out-p[ly] *.diff
 
 %.json: %.export
 	../decode-export-string < $< | jq -S . > $@
 
 %.out %.err: %.dat
 	../decode.pl -dx $< > $*.out 2> $*.err
+
+# ------------------------
+
+.PHONY: diff
+diff: $(parsable_dats:.dat=.diff)
+
+%.diff: %.dat
+	../decode.pl -d $< > $*.out-pl 2>&1
+	../decode    -d $< > $*.out-py 2>&1
+	-diff -w $*.out-pl $*.out-py > $*.diff

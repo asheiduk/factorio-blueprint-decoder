@@ -1,3 +1,6 @@
 *.out
 *.err
 *.json
+*.out-p[ly]
+*.err-p[ly]
+*.diff
