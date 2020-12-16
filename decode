@@ -8,9 +8,6 @@ import time
 from enum import Enum
 
 
-PERL_LEGACY_FORMAT = True
-
-
 ################################################################
 #
 # utilities
@@ -26,16 +23,6 @@ def verbose(*args):
 
 class ParseError(Exception):
     pass
-
-
-if PERL_LEGACY_FORMAT:
-    def normalize_number(number):
-        rounded = round(number)
-        return rounded if rounded == number else number
-
-    def normalize_position(p):
-        p["x"] = normalize_number(p["x"])
-        p["y"] = normalize_number(p["y"])
 
 
 ################################################################
@@ -294,7 +281,7 @@ def read_name(stream, index: Index, type: Index.Type) -> Index.Entry:
         return None
 
 
-def read_signal_new(stream, index: Index):
+def read_signal(stream, index: Index):
     index_type = read_mapped8(stream, (Index.ITEM, Index.FLUID, Index.VSIGNAL))
     name = read_name(stream, index, index_type)
     if not name:
@@ -303,24 +290,6 @@ def read_signal_new(stream, index: Index):
         "type": {Index.ITEM: "item", Index.FLUID: "fluid", Index.VSIGNAL: "virtual"}[index_type],
         "name": name
     }
-
-
-def read_signal_compat(stream, index: Index):
-    index_type = read_mapped8(stream, (Index.ITEM, Index.FLUID, Index.VSIGNAL))
-    name = read_name(stream, index, index_type)
-    return {
-        "type": {Index.ITEM: "item", Index.FLUID: "fluid", Index.VSIGNAL: "virtual"}[index_type],
-        "name": name
-    }
-
-def read_signal(stream, index: Index):
-    # FIXME: The Perl version actually returns an "empty" signal for id 0x00.
-    #       The Python version returns None. The export seems to omit these
-    #       signals, so Python won't go back but wait.
-    if PERL_LEGACY_FORMAT:
-        return read_signal_compat(stream, index)
-    else:
-        return read_signal_new(stream, index)
 
 
 # circuit condition, logistic condition, train schedules
@@ -567,7 +536,7 @@ def ep_turret_common(stream, index, entity):
     # 00 00 00 3f = 0.5f  -> South
     # 00 00 40 3f = 0.75f -> West
     orientation = stream.f32()
-    debug(f"#\tignored orientation {normalize_number(orientation)}")
+    debug(f"#\tignored orientation {orientation}")
 
 
 ################################################################
@@ -858,10 +827,6 @@ def eh_inserter(stream, index, entity):
             "x": stream.f64(),
             "y": stream.f64()
         }
-
-        if PERL_LEGACY_FORMAT:
-            normalize_position(entity["drop_position"])
-            normalize_position(entity["pickup_position"])
 
     read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
 
@@ -1348,7 +1313,7 @@ def eh_programmable_speaker(stream, index, entity):
     ep_entity_ids(stream, index, entity)
 
     entity["parameters"] = {
-        "playback_volume": normalize_number(stream.f64()),
+        "playback_volume": stream.f64(),
         "playback_globally": stream.bool(),
         "allow_polyphony": stream.bool(),
     }
@@ -1919,9 +1884,6 @@ def parse_entities(stream, index, result):
                     "x": offset_x / 256,
                     "y": offset_y / 256
                 }
-
-        if PERL_LEGACY_FORMAT:
-            normalize_position(position)
 
         # debug output
         debug(f"    [{len(entities)}] @{file_position:#x} - "
