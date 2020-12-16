@@ -1,0 +1,2240 @@
+#!/usr/bin/python3
+
+import argparse
+import sys
+import struct
+import json
+import time
+from enum import Enum
+
+
+################################################################
+#
+# utilities
+
+def debug(*args):
+    if opt.d:
+        print(*args, file=sys.stderr, flush=True)
+
+def verbose(*args):
+    if opt.v or opt.d:
+        print(*args, file=sys.stderr, flush=True)
+
+
+class ParseError(Exception):
+    pass
+
+
+################################################################
+#
+# Index
+
+class Index:
+
+    # types (distinct number ranges)
+    # `value` is the prototype-class (except "entity"). In BP exports the wording is just "virtual".
+    class Type(Enum):
+        ITEM = "item"
+        FLUID = "fluid"
+        VSIGNAL = "virtual-signal"
+        TILE = "tile"
+        ENTITY = "entity"
+        RECIPE = "recipe"
+
+    ITEM = Type.ITEM
+    FLUID = Type.FLUID
+    VSIGNAL = Type.VSIGNAL
+    TILE = Type.TILE
+    ENTITY = Type.ENTITY
+    RECIPE = Type.RECIPE
+
+    _type_mapping = {
+        # item
+        "ammo": ITEM,
+        "armor": ITEM,
+        "blueprint": ITEM,
+        "blueprint-book": ITEM,
+        "capsule": ITEM,
+        "deconstruction-item": ITEM,
+        "gun": ITEM,
+        "item": ITEM,
+        "item-with-entity-data": ITEM,
+        "module": ITEM,
+        "spidertron-remote": ITEM,
+        "rail-planner": ITEM,
+        "repair-tool": ITEM,
+        "tool": ITEM,
+        "upgrade-item": ITEM,
+        # fluid
+        "fluid": FLUID,
+        # virtual-signal
+        "virtual-signal": VSIGNAL,
+        # entity
+        "accumulator": ENTITY,
+        "ammo-turret": ENTITY,
+        "arithmetic-combinator": ENTITY,
+        "artillery-turret": ENTITY,
+        "artillery-wagon": ENTITY,
+        "assembling-machine": ENTITY,
+        "beacon": ENTITY,
+        "boiler": ENTITY,
+        "cargo-wagon": ENTITY,
+        "cliff": ENTITY,
+        "constant-combinator": ENTITY,
+        "container": ENTITY,
+        "curved-rail": ENTITY,
+        "decider-combinator": ENTITY,
+        "electric-pole": ENTITY,
+        "electric-turret": ENTITY,
+        "entity-ghost": ENTITY,
+        "fish": ENTITY,
+        "fluid-turret": ENTITY,
+        "fluid-wagon": ENTITY,
+        "furnace": ENTITY,
+        "gate": ENTITY,
+        "generator": ENTITY,
+        "heat-pipe": ENTITY,
+        "infinity-container": ENTITY,
+        "inserter": ENTITY,
+        "item-entity": ENTITY,
+        "item-request-proxy": ENTITY,
+        "lab": ENTITY,
+        "lamp": ENTITY,
+        "land-mine": ENTITY,
+        "locomotive": ENTITY,
+        "logistic-container": ENTITY,
+        "mining-drill": ENTITY,
+        "offshore-pump": ENTITY,
+        "pipe": ENTITY,
+        "pipe-to-ground": ENTITY,
+        "power-switch": ENTITY,
+        "programmable-speaker": ENTITY,
+        "pump": ENTITY,
+        "radar": ENTITY,
+        "rail-chain-signal": ENTITY,
+        "rail-signal": ENTITY,
+        "reactor": ENTITY,
+        "roboport": ENTITY,
+        "rocket-silo": ENTITY,
+        "simple-entity": ENTITY,
+        "solar-panel": ENTITY,
+        "splitter": ENTITY,
+        "storage-tank": ENTITY,
+        "straight-rail": ENTITY,
+        "tile-ghost": ENTITY,
+        "train-stop": ENTITY,
+        "transport-belt": ENTITY,
+        "tree": ENTITY,
+        "underground-belt": ENTITY,
+        "wall": ENTITY,
+        # tile
+        "tile": TILE,
+        # recipe
+        "recipe": RECIPE,
+    }
+
+    class Entry:
+        def __init__(self, id: int, type, prototype: str, name: str):
+            self.id = id
+            self.type = type
+            self.prototype = prototype
+            self.name = name
+
+    def __init__(self):
+        self._data = {
+            self.ITEM: {},
+            self.FLUID: {},
+            self.VSIGNAL: {},
+            self.TILE: {},
+            self.ENTITY: {},
+            self.RECIPE: {},
+        }
+
+    def add(self, id: int, prototype: str, name: str) -> Entry:
+        if id == 0x00:
+            raise ValueError("ID 0 is not allowed")
+        type = self._type_mapping[prototype]
+        bucket = self._data[type]
+        if id in bucket:
+            raise ValueError(f"ID {id} ({id:#x}) is already used for '{bucket[id]['name']}'")
+        entry = bucket[id] = Index.Entry(id, type, prototype, name)
+        return entry
+
+    def get(self, type: Type, id: int) -> Entry:
+        return self._data[type][id]
+
+
+################################################################
+#
+# primitives
+
+class PrimitiveStream:
+
+    def __init__(self, f):
+        self._f = f
+
+    def _read(self, format):
+        return struct.unpack(
+            format,
+            self._f.read(struct.calcsize(format)))[0]
+
+    def tell(self):
+        return self._f.tell()
+
+    def bool(self):
+        data = self.u8()
+        if data != 0x00 and data != 0x01:
+            raise ParseError(f"invalid boolean value {data:#04x} at position {self.tell()-1:#06x}")
+        return data == 0x01
+
+    def s8(self):
+        return self._read("<b")
+
+    def u8(self):
+        return self._read("<B")
+
+    def s16(self):
+        return self._read("<h")
+
+    def u16(self):
+        return self._read("<H")
+
+    def s32(self):
+        return self._read("<i")
+
+    def u32(self):
+        return self._read("<I")
+
+    # see https://en.wikipedia.org/wiki/Single-precision_floating-point_format#Single-precision_examples
+    # for remarkable examples like "0x3f80_0000" for "1"
+    def f32(self):
+        return self._read("<f")
+
+    # see https://en.wikipedia.org/wiki/Double-precision_floating-point_format#Double-precision_examples
+    # for remarkable examples like "0x3ff0_0000_0000_0000" for "1"
+    def f64(self):
+        return self._read("<d")
+
+    def count(self):
+        length = self.u8()
+        if length == 0xff:
+            return self.u32()
+        else:
+            return length
+
+    def count8(self):
+        data = self.u8()
+        if data == 0xff:
+            file_position = self.tell()
+            raise ParseError("unexpected flexible length 0xff @{file_position:#x}")
+        return data
+
+    def count16(self):
+        return self.u16()
+
+    def count32(self):
+        return self.u32()
+
+    def string(self):
+        length = self.count()
+        return self._f.read(length).decode("utf-8")
+
+    def dump_trailing_data(self):
+        def to_hex(s: str):
+            return " ".join([f'{b:02x}' for b in s])
+
+        position, data = self._f.tell(), self._f.read(16)
+        if data:
+            debug("trailing data:")
+            while data:
+                debug(f"{position:06x}", to_hex(data))
+                position, data = self._f.tell(), self._f.read(16)
+
+
+################################################################
+#
+# stream helpers
+
+def read_entry(stream, index: Index, type: Index.Type) -> Index.Entry:
+    if type == Index.TILE:
+        id = stream.u8()
+        offset = 1
+    else:
+        id = stream.u16()
+        offset = 2
+
+    if id:
+        try:
+            return index.get(type, id)
+        except KeyError:
+            position = stream.tell() - offset
+            raise ParseError(f"unknown '{type.value}' ID {id:#x} at {position:#x}") from None
+    else:
+        return None
+
+
+def read_name(stream, index: Index, type: Index.Type) -> Index.Entry:
+    entry = read_entry(stream, index, type)
+    if entry:
+        return entry.name
+    else:
+        return None
+
+
+def read_signal(stream, index: Index):
+    index_type = read_mapped8(stream, (Index.ITEM, Index.FLUID, Index.VSIGNAL))
+    name = read_name(stream, index, index_type)
+    if not name:
+        return None
+    return {
+        "type": {Index.ITEM: "item", Index.FLUID: "fluid", Index.VSIGNAL: "virtual"}[index_type],
+        "name": name
+    }
+
+
+# circuit condition, logistic condition, train schedules
+def read_condition(stream, index: Index):
+    # same order in drop-down
+    comparator = read_mapped8(stream, (">", "<", "=", "≥", "≤", "≠"))
+
+    first_signal = read_signal(stream, index)
+    second_signal = read_signal(stream, index)
+    constant = stream.s32()
+    use_constant = stream.bool()
+
+    # hide "default" condition
+    if not first_signal and not second_signal and comparator == "<" and not constant:
+        return None
+
+    condition = {}
+    condition["first_signal"] = first_signal
+    condition["comparator"] = comparator
+    # The export does not output data if it is hidden in the UI.
+    if use_constant:
+        condition["constant"] = constant
+    else:
+        condition["second_signal"] = second_signal
+
+    return condition
+
+
+def read_mapped8(stream, args):
+    index = stream.u8()
+    if index in range(len(args)):
+        return args[index]
+    else:
+        position = stream.tell() - 1
+        raise ParseError(f"unexpected value {index} at position {position}: only 0..{len(args)-1} expected")
+
+
+def read_unknown(stream: PrimitiveStream, *expected_bytes):
+    if not expected_bytes:
+        expected_bytes = 0x00,
+
+    for expected in expected_bytes:
+        actual = stream.u8()
+        if actual != expected:
+            position = stream.tell()
+            raise ParseError(f"expected {expected:#04x} but got {actual:#04x} at position {position} ({position:#x})")
+
+
+def read_ignore(stream: PrimitiveStream, size, guess=None):
+    file_position = stream.tell()
+    # FIXME: don't do this:
+    data = stream._f.read(size)
+    # data = " ".join( data.m)
+
+    data = " ".join([ hex(b).replace("0x", "") for b, in struct.iter_unpack("B", data) ])
+
+    if guess:
+        debug(f"#\tignored {guess} @{file_position:#x}: {data}")
+    else:
+        debug(f"#\tignored @{file_position:#x}: {data}")
+
+
+################################################################
+#
+# entity parts (ep_*)
+
+
+def ep_entity_ids(stream, index, entity):
+    flags = stream.u8()
+    # 0x10	-- has entity id (default=0)
+    if flags | 0x10 != 0x10:
+        raise ParseError(f"unexpected flags {flags:#04x} at position {stream.tell()-1:#x}")
+
+    if flags & 0x10:
+        read_unknown(stream, 0x01)
+        entity_id = stream.u32()
+        entity["entity_id"] = entity_id
+        debug(f"\tentity-id: {entity_id}")
+        # TODO: in export "entity_"number" but "entity_id" in references.
+        # Also: EACH entity in the export has the number and entities are
+        # numbered 1..N.
+
+
+def ep_bar(stream, index, entity):
+    # "Warehousing Mod" writes 2000 stacks but the UI reports 1800.
+    bar = stream.u16()
+    # The export format suppresses the default values. But these
+    # are - in general - unknown to me beyond the vanilla chests.
+    bar_defaults = {
+        # container
+        "wooden-chest" : 0x10,
+        "iron-chest"   : 0x20,
+        "steel-chest"  : 0x30,
+        # logistic-container
+        "logistic-chest-active-provider"	: 0x30,
+        "logistic-chest-passive-provider"	: 0x30,
+        "logistic-chest-storage"	: 0x30,
+        "logistic-chest-requester"	: 0x30,
+        "logistic-chest-buffer"		: 0x30,
+        # cheat mode
+        "infinity-chest" : 0x30,
+        # trains
+        "cargo-wagon"	 : 0x28,
+    }
+    default_bar = bar_defaults.get(entity["name"], None)
+    if not default_bar or default_bar != bar:
+        entity["bar"] = bar
+
+
+# maybe helpfull: https://wiki.factorio.com/Types/Direction
+def ep_direction(stream, index, entity):
+    direction = stream.u8()
+    if direction:
+        entity["direction"] = direction
+
+
+def ep_orientation(stream, index, entity):
+    orientation = stream.f32()
+    if orientation:
+        entity["orientation"] = orientation
+
+
+def ep_circuit_connections(stream, index, entity, own_circuit_id="1"):
+    connections = {}
+
+    # How many "colors"?
+    # https://lua-api.factorio.com/latest/defines.html#defines.wire_type
+    for color in ("red", "green"):
+        peers = []
+        peer_count = stream.count8()
+        for p in range(peer_count):
+            entity_id = stream.u32()
+            circuit_id = stream.u8()
+            peers.append({
+                "entity_id": entity_id,
+                # TODO: skip "circuit_id" for "simple" circuits
+                "circuit_id": circuit_id
+            })
+            read_unknown(stream, 0xff)
+        if peers:
+            connections[color] = peers
+
+    # maybe helpfull: https://lua-api.factorio.com/latest/defines.html#defines.circuit_connector_id
+
+    if connections:
+        if "connections" not in entity:
+            entity["connections"] = {}
+        entity["connections"][str(own_circuit_id)] = connections
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def ep_circuit_condition(stream, index, entity):
+    circuit_condition = read_condition(stream, index)
+    if circuit_condition:
+        control_behavior = entity.setdefault("control_behavior", {})
+        control_behavior["circuit_condition"] = circuit_condition
+
+
+def ep_logistic_condition(stream, index, entity):
+    logistic_condition = read_condition(stream, index)
+    if logistic_condition:
+        control_behavior = entity.setdefault("control_behavior", {})
+        control_behavior["logistic_condition"] = logistic_condition
+
+    logistic_connected = stream.bool()
+    if logistic_connected:
+        control_behavior = entity.setdefault("control_behavior", {})
+        control_behavior["connect_to_logistic_network"] = True
+    else:
+        if "control_behavior" in entity:
+            entity["control_behavior"].pop("logistic_condition", None)
+
+def ep_railway_vehicle_common(stream, index, entity):
+    read_unknown(stream, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x01)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+    # 26 22 4f
+    # e7 73 ed
+    # ac d3 65
+    read_ignore(stream, 3, "train-id(?)")
+
+    read_unknown(stream, 0x00, 0x00)
+
+
+def ep_filters(stream, index, entity):
+    # Even without filters the count is > 0 for filter-inserters.
+    filter_count = stream.u8()
+    if not filter_count:
+        return
+
+    filters = []
+    for f in range(filter_count):
+        filter_name = read_name(stream, index, Index.ITEM)
+        filters.append(filter_name)
+    entity["filters"] = filters
+    # TODO: The export file suppresses an empty list (or a list with only None entries).
+    # TODO: The export also uses a map, not an array, hence the items have an additional index field.
+
+
+def ep_items(stream, index, entity):
+
+    # Interesting point: Modules are not a simple list like icons.
+    # Instead the modules are first sorted and then grouped by type.
+    # So building an assembler with modules Eff1, Sp1, Eff1, Sp1 the blueprint
+    # only contains the data "Sp1: 2, Eff:2". So some details are omitted.
+
+    items = {}
+    item_count = stream.u32()
+    for i in range(item_count):
+        item_name = read_name(stream, index, Index.ITEM)
+        item_count = stream.u32()
+        items[item_name] = item_count
+    if items:
+        entity["items"] = items
+
+
+def ep_color(stream, index, entity):
+    use_colors = stream.bool()
+    if use_colors:
+        entity["colors"] = {
+            "r": stream.f32(),
+            "g": stream.f32(),
+            "b": stream.f32(),
+            "a": stream.f32()
+        }
+
+
+def ep_turret_common(stream, index, entity):
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x80, 0x3f) # 1.0f
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00)
+
+    # Strictly speaking: artillery-turret doesn't have "orientation" besides 0.0f.
+
+    # 00 00 00 00 = 0.0f  -> North
+    # 00 00 80 3e = 0.25f -> East
+    # 00 00 00 3f = 0.5f  -> South
+    # 00 00 40 3f = 0.75f -> West
+    orientation = stream.f32()
+    debug(f"#\tignored orientation {orientation}")
+
+
+################################################################
+#
+# entity handlers (eh_*)
+
+def eh_container(stream, index, entity):
+
+    # entity ids
+    ep_entity_ids(stream, index, entity)
+
+    # restriction aka. "bar"
+    ep_bar(stream, index, entity)
+
+    # circuit connections
+    has_circuit_connections = stream.bool()
+    if has_circuit_connections:
+        ep_circuit_connections(stream, index, entity)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_logistic_container(stream, index, entity):
+
+    # entity ids
+    ep_entity_ids(stream, index, entity)
+
+    # restriction aka. "bar"
+    ep_bar(stream, index, entity)
+
+    read_unknown(stream, 0x00)
+    read_unknown(stream, 0x01)
+
+    logistic_mode = stream.u8()  # not used in export
+    if not 0 <= logistic_mode <= 5:
+        raise ParseError(f"unknown logistic mode {logistic_mode}")
+
+    read_unknown(stream, 0x03)
+
+    request_filters = []
+    filter_count = stream.count8()
+    for f in range(filter_count):
+        item_name = read_name(stream, index, Index.ITEM)
+        item_count = stream.u32()
+        read_unknown(stream)
+        if item_name:
+            request_filters.append({
+                "name": item_name,
+                "count": item_count
+            })
+        else:
+            request_filters.append(None)
+    if filter_count > 0:
+        # Strange: First occurance of the pattern that the list size affects
+        # the presence/absence of data after the list.
+        request_from_buffers = stream.bool()
+        if request_from_buffers:
+            entity["request_from_buffers"] = True
+
+    # TODO: export compresses the filter list
+    if request_filters:
+        entity["request_filters"] = request_filters
+
+    read_unknown(stream, 0x00, 0x00)
+
+    # circuit connections
+    has_circuit_connections = stream.bool()
+    if has_circuit_connections:
+        ep_circuit_connections(stream, index, entity)
+        # strange: is this some padding?
+        read_unknown(stream)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_infinity_container(stream, index, entity):
+
+    # entity ids
+    ep_entity_ids(stream, index, entity)
+
+    # restriction aka. "bar"
+    ep_bar(stream, index, entity)
+
+    read_unknown(stream, 0x00, 0x00)
+
+    # circuit connections
+    has_circuit_connections = stream.bool()
+    if has_circuit_connections:
+        ep_circuit_connections(stream, index, entity)
+        # strange: is this some padding?
+        read_unknown(stream)
+
+    # infinity settings
+    entity["infinity_settings"] = {}
+
+    filters = []
+    filter_count = stream.count8()
+    for f in range(filter_count):
+        item_name = read_name(stream, index, Index.ITEM)
+        item_count = stream.u32()
+        mode = read_mapped8(stream, ("at-least", "at-most", "exactly"))
+        filters.append({
+            "name": item_name,
+            "count": item_count,
+            "mode": mode
+        })
+    if filters:
+        entity["infinity_settings"]["filters"] = filters
+
+    remove_unfiltered_items = stream.bool()
+    entity["infinity_settings"]["remove_unfiltered_items"] = remove_unfiltered_items
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_storage_tank(stream, index, entity):
+    ep_entity_ids(stream, index, entity)
+    ep_direction(stream, index, entity)
+
+    # circuit network connections
+    has_circuit_connections = stream.bool()
+    if has_circuit_connections:
+        # connections
+        ep_circuit_connections(stream, index, entity)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_transport_belt(stream, index, entity):
+
+    ep_entity_ids(stream, index, entity)
+    ep_direction(stream, index, entity)
+
+    # circuit network connections
+    has_circuit_connections = stream.bool()
+    if has_circuit_connections:
+
+        # connections
+        ep_circuit_connections(stream, index, entity)
+
+        # circuit condition & logistic condition
+        ep_circuit_condition(stream, index, entity)
+        ep_logistic_condition(stream, index, entity)
+
+        read_unknown(stream, 0x00, 0x00)
+
+        # mode of operation (specific for transport-belt)
+        # maybe helpfull: https://lua-api.factorio.com/latest/defines.html#defines.control_behavior
+        control_behavior = entity.setdefault("control_behavior", {})
+
+        circuit_enable_disable = stream.bool()
+        control_behavior["circuit_enable_disable"] = circuit_enable_disable
+
+        circuit_read_hand_contents = stream.bool()
+        control_behavior["circuit_read_hand_contents"] = circuit_read_hand_contents
+
+        circuit_contents_read_mode = stream.u8()
+        control_behavior["circuit_contents_read_mode"] = circuit_contents_read_mode
+
+        # really strange stuff
+        read_unknown(stream, 0xff, 0xff, 0xff, 0xff)
+        read_unknown(stream, 0xff, 0xff, 0xff, 0xff)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_underground_belt(stream, index, entity):
+    read_unknown(stream)
+    ep_direction(stream, index, entity)
+    type = read_mapped8(stream, ("input", "output"))
+    entity["type"] = type
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_splitter(stream, index, entity):
+    read_unknown(stream)
+    ep_direction(stream, index, entity)
+
+    priorities = stream.u8()
+
+    # "explanation": masks
+    # => 0x10	-> output prio enabled
+    # => 0x20	-> input priority enabled
+    # => 0x0c	-> input priority left
+    # => 0x03	-> output priority left
+    # strange thing: why two bits for both 0x0c and 0x03?
+
+    priority_mapping = {
+        0x00 : [None, None],
+        0x10 : [None, "right"],
+        0x13 : [None, "left"],
+        0x20 : ["right", None],
+        0x2c : ["left", None],
+        0x30 : ["right", "right"],
+        0x33 : ["right", "left"],
+        0x3c : ["left", "right"],
+        0x3f : ["left", "left"]
+    }
+
+    mapped_priorities = priority_mapping[priorities]
+    if not mapped_priorities:
+        raise ParseError(f"unexpected splitter priority code {priorities:#04x}")
+    input_priority, output_priority = mapped_priorities
+
+    if input_priority:
+        entity["input_priority"] = input_priority
+    if output_priority:
+        entity["output_priority"] = output_priority
+
+    filter_name = read_name(stream, index, Index.ITEM)
+    if filter_name:
+        entity["filter"] = filter_name
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_inserter(stream, index, entity):
+    # entity ids
+    ep_entity_ids(stream, index, entity)
+
+    # 0x01 -- override_stack_size
+    # 0x02 -- filter_mode: 0=blacklist, 1(default)=whitelist
+    # 0x04 -- TODO - unknown - default=1(?)
+    # others: TODO - unknown - default=0(?)
+    flags = stream.u8()
+    if flags | 0x03 != 0x07:
+        raise ParseError(f"unexpected flag {flags:#04x} at position {stream.tell()-1:#x}")
+
+    # direction
+    ep_direction(stream, index, entity)
+
+    # override stack size
+    if flags & 0x01:
+        entity["override_stack_size"] = stream.u8()
+
+    # circuit network connections
+    has_circuit_connections = stream.bool()
+    if has_circuit_connections:
+        # connections
+        ep_circuit_connections(stream, index, entity)
+
+        # circuit condition & logistic condition
+        ep_circuit_condition(stream, index, entity)
+        ep_logistic_condition(stream, index, entity)
+
+        read_unknown(stream, 0x00, 0x00)
+
+        # mode of operation
+
+        control_behavior = entity.setdefault("control_behavior", {})
+
+        # maybe helpfull: https://lua-api.factorio.com/latest/defines.html#defines.control_behavior
+        mode_of_operation = stream.u8()
+        if mode_of_operation:
+            control_behavior["circuit_mode_of_operation"] = mode_of_operation
+
+        read_hand_flag = stream.bool()
+        read_hand_mode = stream.bool() # not a bool but only 0/1 allowed
+        if read_hand_flag:
+            control_behavior["circuit_read_hand_contents"] = True
+        if read_hand_mode:
+            control_behavior["circuit_hand_read_mode"] = 1
+
+        set_stack_size = stream.bool()
+        if set_stack_size:
+            control_behavior["circuit_set_stack_size"] = True
+        stack_control_input_signal = read_signal(stream, index)
+        if stack_control_input_signal:
+            control_behavior["stack_control_input_signal"] = stack_control_input_signal
+
+        # End of "mode of operation"
+
+    # item filters
+    ep_filters(stream, index, entity)
+
+    if not flags & 0x02:
+        entity["filter_mode"] = "blacklist"
+
+    # pickup/drop position
+    is_miniloader = stream.bool()
+    if is_miniloader:
+        # examples: miniloader mod
+        entity["drop_position"] = {
+            "x": stream.f64(),
+            "y": stream.f64()
+        }
+        entity["pickup_position"] = {
+            "x": stream.f64(),
+            "y": stream.f64()
+        }
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_electric_pole(stream, index, entity):
+    ep_entity_ids(stream, index, entity)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00)
+
+    # circuit network connections
+    has_circuit_connections = stream.bool()
+    if has_circuit_connections:
+        ep_circuit_connections(stream, index, entity)
+
+    # TODO: This applies only to power-switches, but the export
+    # mentions these connections only on the side of the switch.
+    # Normal circuit connections are listed in the export on both
+    # sides.
+    peer_count = stream.count8()
+    for p in range(peer_count):
+        peer_id = stream.u32()
+        circuit_id = stream.u8()
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_pipe(stream, index, entity):
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_pipe_to_ground(stream, index, entity):
+    read_unknown(stream)
+    ep_direction(stream, index, entity)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_pump(stream, index, entity):
+
+    ep_entity_ids(stream, index, entity)
+    ep_direction(stream, index, entity)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x01, 0x00, 0x00, 0x00, 0x01)
+
+    has_circuit_connections = stream.bool()
+    if has_circuit_connections:
+        # connections
+        ep_circuit_connections(stream, index, entity)
+
+        # circuit condition & logistic condition
+        ep_circuit_condition(stream, index, entity)
+        ep_logistic_condition(stream, index, entity)
+        read_unknown(stream, 0x00, 0x00)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_straight_rail(stream, index, entity):
+    read_unknown(stream)
+    ep_direction(stream, index, entity)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_curved_rail(stream, index, entity):
+    read_unknown(stream)
+    ep_direction(stream, index, entity)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_train_stop(stream, index, entity):
+    ep_entity_ids(stream, index, entity)
+
+    station = stream.string()
+    if station:
+        entity["station"] = station
+
+    ep_direction(stream, index, entity)
+
+    has_circuit_connections = stream.bool()
+    if has_circuit_connections:
+        # connections
+        ep_circuit_connections(stream, index, entity)
+
+        # circuit condition & logistic condition
+        ep_circuit_condition(stream, index, entity)
+        ep_logistic_condition(stream, index, entity)
+
+        read_unknown(stream, 0x00, 0x00)
+
+        circuit_enable_disable = stream.bool()
+        send_to_train = stream.bool()
+        read_from_train = stream.bool()
+        read_stopped_train = stream.bool()
+
+        control_behavior = entity.setdefault("control_behavior", {})
+        if read_from_train:
+            control_behavior["read_from_train"] = True
+        if circuit_enable_disable:
+            control_behavior["circuit_enable_disable"] = True
+
+        # "true" is the silent default
+        if not send_to_train:
+            control_behavior["send_to_train"] = False
+
+        # Why two flags (read_stopped_train and train_stopped_flag)?
+        if read_stopped_train:
+            control_behavior["read_stopped_train"] = True
+        train_stopped_flag = stream.bool()
+        train_stopped_signal = read_signal(stream, index)
+        if train_stopped_flag:
+            control_behavior["train_stopped_signal"] = train_stopped_signal
+
+        read_unknown(stream, 0x00, 0x00, 0x00, 0x00)
+
+    ep_color(stream, index, entity)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_rail_signal(stream, index, entity):
+    ep_entity_ids(stream, index, entity)
+    ep_direction(stream, index, entity)
+
+    has_circuit_connections = stream.bool()
+    if has_circuit_connections:
+        # connections
+        ep_circuit_connections(stream, index, entity)
+
+        control_behavior = entity.setdefault("control_behavior", {})
+
+        circuit_close_signal = stream.bool()
+        control_behavior["circuit_close_signal"] = circuit_close_signal
+
+        circuit_read_signal = stream.bool()
+        control_behavior["circuit_read_signal"] = circuit_read_signal
+
+        # TODO: similar to signals in roboport
+        def encode_color_signal(default_name, key):
+            value = read_signal(stream, index)
+            if value and (value["type"] != "virtual" or value["name"] != default_name):
+                control_behavior[key] = value
+
+        encode_color_signal("signal-red", "red_output_signal")
+        encode_color_signal("signal-yellow", "orange_output_signal")
+        encode_color_signal("signal-green", "green_output_signal")
+
+        ep_circuit_condition(stream, index, entity)
+
+        read_unknown(stream)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_rail_chain_signal(stream, index, entity):
+    ep_entity_ids(stream, index, entity)
+    ep_direction(stream, index, entity)
+
+    has_circuit_connections = stream.bool()
+    if has_circuit_connections:
+        # connections
+        ep_circuit_connections(stream, index, entity)
+
+        control_behavior = entity.setdefault("control_behavior", {})
+
+        # TODO: similar to signals in roboport
+        def encode_color_signal(default_name, key):
+            value = read_signal(stream, index)
+            if value and (value["type"] != "virtual" or value["name"] != default_name):
+                control_behavior[key] = value
+
+        encode_color_signal("signal-red", "red_output_signal")
+        encode_color_signal("signal-yellow", "orange_output_signal")
+        encode_color_signal("signal-green", "green_output_signal")
+        encode_color_signal("signal-blue", "blue_output_signal")
+
+        if not control_behavior:
+            del entity["control_behavior"]
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_locomotive(stream, index, entity):
+    ep_entity_ids(stream, index, entity)
+    read_unknown(stream)
+
+    ep_orientation(stream, index, entity)
+
+    ep_railway_vehicle_common(stream, index, entity)
+
+    ep_color(stream, index, entity)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+    # fuel
+    ep_items(stream, index, entity)
+
+    read_unknown(stream)
+
+
+def eh_cargo_wagon(stream, index, entity):
+    read_unknown(stream, 0x00, 0x00)
+    ep_orientation(stream, index, entity)
+
+    ep_railway_vehicle_common(stream, index, entity)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+    ep_filters(stream, index, entity)
+
+    ep_bar(stream, index, entity)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_fluid_wagon(stream, index, entity):
+    read_unknown(stream, 0x00, 0x00)
+    ep_orientation(stream, index, entity)
+
+    ep_railway_vehicle_common(stream, index, entity)
+
+    read_unknown(stream,0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream,0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream,0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream,0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream,0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_artillery_wagon(stream, index, entity):
+    read_unknown(stream, 0x00, 0x00)
+    ep_orientation(stream, index, entity)
+
+    ep_railway_vehicle_common(stream, index, entity)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x80, 0x3f) # 1.0f
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0xff, 0x7f) # s16: max. positive value
+    read_unknown(stream, 0xff, 0xff, 0xff, 0x7f) # s32: max. positive value
+    read_unknown(stream, 0xff, 0xff, 0xff, 0x7f) # s32: max. positive value
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0xff, 0xff, 0xff, 0x7f) # s32: max. positive value
+    read_unknown(stream, 0xff, 0xff, 0xff, 0x7f) # s32: max. positive value
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x03)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x01, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x80, 0x3f) # 1.0f
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_roboport(stream, index, entity):
+    ep_entity_ids(stream, index, entity)
+
+    has_circuit_connections = stream.bool()
+    if has_circuit_connections:
+        # connections
+        ep_circuit_connections(stream, index, entity)
+
+        control_behavior = {}
+
+        # flags and signals
+        read_logistics = stream.bool()
+        if not read_logistics:
+            control_behavior["read_logistics"] = False
+
+        read_robot_stats = stream.bool()
+        if read_robot_stats:
+            control_behavior["read_robot_stats"] = True
+
+        def roboport_signal(default_signal, key):
+            signal = read_signal(stream, index)
+            # map None to a special "empty" signal
+            if not signal:
+                signal = { "type": "item" }
+            # default_signal is not written
+            if read_robot_stats and signal != { "type": "virtual", "name": default_signal }:
+                control_behavior[key] = signal
+
+        roboport_signal("signal-X", "available_logistic_output_signal")
+        roboport_signal("signal-Y", "total_logistic_output_signal")
+        roboport_signal("signal-Z", "available_construction_output_signal")
+        roboport_signal("signal-T", "total_construction_output_signal")
+
+        if control_behavior:
+            entity["control_behavior"] = control_behavior
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_lamp(stream, index, entity):
+    ep_entity_ids(stream, index, entity)
+    has_circuit_connections = stream.bool()
+    if has_circuit_connections:
+        #connections
+        ep_circuit_connections(stream, index, entity)
+
+        ep_circuit_condition(stream, index, entity)
+        ep_logistic_condition(stream, index, entity)
+
+        read_unknown(stream, 0x00, 0x00)
+
+        use_colors = stream.bool()
+        if use_colors:
+            control_behavior = entity.setdefault("control_behavior", {})
+            control_behavior["use_colors"] = True
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_arithmetic_combinator(stream, index, entity):
+    ep_entity_ids(stream, index, entity)
+    ep_direction(stream, index, entity)
+
+    # connections
+    ep_circuit_connections(stream, index, entity, "1")
+    ep_circuit_connections(stream, index, entity, "2")
+
+    # condition
+    first_signal = read_signal(stream, index)
+    second_signal = read_signal(stream, index)
+    output_signal = read_signal(stream, index)
+    second_constant = stream.s32()
+    operation = read_mapped8(stream, ("*", "/", "+", "-", "%", "^", "<<", ">>", "AND", "OR", "XOR"))
+    use_second_constant = stream.bool()
+    first_constant = stream.s32()
+    use_first_constant = stream.bool()
+
+    control_behavior = entity["control_behavior"] = {}
+    conditions =  control_behavior["arithmetic_conditions"] = {}
+
+    conditions["operation"] = operation
+
+    if use_first_constant:
+        conditions["first_constant"] = first_constant
+    elif first_signal:
+        conditions["first_signal"] = first_signal
+
+    if use_second_constant:
+        conditions["second_constant"] = second_constant
+    elif second_signal:
+        conditions["second_signal"] = second_signal
+
+    if output_signal:
+        conditions["output_signal"] = output_signal
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_decider_combinator(stream, index, entity):
+    ep_entity_ids(stream, index, entity)
+    ep_direction(stream, index, entity)
+
+    # connections
+    ep_circuit_connections(stream, index, entity, "1")
+    ep_circuit_connections(stream, index, entity, "2")
+
+    # condition
+    first_signal = read_signal(stream, index)
+    second_signal = read_signal(stream, index)
+    output_signal = read_signal(stream, index)
+    second_constant = stream.s32()
+    comparator = read_mapped8(stream, (">", "<", "=", "≥", "≤", "≠"))
+
+    copy_count_from_input = stream.bool()
+    use_constant = stream.bool()
+
+    control_behavior = entity["control_behavior"] = {}
+    conditions = control_behavior["decider_conditions"] = {}
+
+    conditions["comparator"] = comparator
+    if first_signal:
+        conditions["first_signal"] = first_signal
+
+    if use_constant:
+        conditions["constant"] = second_constant
+    elif second_signal:
+        conditions["second_signal"] = second_signal
+
+    if output_signal:
+        conditions["output_signal"] = output_signal
+
+    conditions["copy_count_from_input"] = copy_count_from_input
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_constant_combinator(stream, index, entity):
+    # entity ids
+    ep_entity_ids(stream, index, entity)
+
+    # circuit connections
+    ep_circuit_connections(stream, index, entity)
+
+    control_behavior = None
+
+    # filters
+    filters = []
+    filter_count = stream.count32()
+    for f in range(filter_count):
+        signal = read_signal(stream, index)
+        count = stream.s32()
+        if signal:
+            filters.append({
+                "signal": signal,
+                "count": count
+            })
+        else:
+            filters.append(None)
+    if filters:
+        control_behavior = entity.setdefault("control_behavior", {})
+        # Export: Why "filter"? These are not filters.
+        # TODO: suppress empty signal list.
+        control_behavior["filters"] = filters
+
+    is_on = stream.bool()
+    if not is_on:
+        control_behavior = entity.setdefault("control_behavior", {})
+        control_behavior["is_on"] = False
+
+    ep_direction(stream, index, entity)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_power_switch(stream, index, entity):
+    ep_entity_ids(stream, index, entity)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+    connections = {}
+
+    # Contrary to circuit-connections there is no counter/list and therefore
+    # at most one wire can connect to each side. On the other hand the
+    # export format has exactly lists in place. *shrug*
+    # On the other hand the switch misses one structural level. *sigh*
+    connection_cu0 = stream.u32()
+    if connection_cu0:
+        # Strange: Caps-key are unusual!
+        connections["Cu0"] = [
+            {
+                "entity_id": connection_cu0,
+                "wire_id": 0
+            }
+        ]
+
+    connection_cu1 = stream.u32()
+    if connection_cu1:
+        # Strange: Caps-key are unusual!
+        connections["Cu1"] = [
+            {
+                "entity_id": connection_cu1,
+                "wire_id": 0
+            }
+        ]
+
+    if connections:
+        entity["connections"] = connections
+
+    has_circuit_connections = stream.bool()
+    if has_circuit_connections:
+        # connections
+        ep_circuit_connections(stream, index, entity)
+
+        # condition
+        ep_circuit_condition(stream, index, entity)
+        ep_logistic_condition(stream, index, entity)
+
+        read_unknown(stream, 0x00, 0x00)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_programmable_speaker(stream, index, entity):
+    ep_entity_ids(stream, index, entity)
+
+    entity["parameters"] = {
+        "playback_volume": stream.f64(),
+        "playback_globally": stream.bool(),
+        "allow_polyphony": stream.bool(),
+    }
+
+    alert_parameters = entity["alert_parameters"] = {
+        "show_alert": stream.bool(),
+        "show_on_map": stream.bool(),
+        "icon_signal_id": read_signal(stream, index),
+        "alert_message": stream.string(),
+    }
+    if not alert_parameters["icon_signal_id"]:
+        del alert_parameters["icon_signal_id"]
+
+    has_circuit_connections = stream.bool()
+    if has_circuit_connections:
+        # connections
+        ep_circuit_connections(stream, index, entity)
+
+        # condition
+        ep_circuit_condition(stream, index, entity)
+
+        signal_value_is_pitch = stream.bool()
+
+        instrument_id = stream.u8()
+        read_unknown(stream, 0x00, 0x00, 0x00)  # perhaps u32?
+
+        note_id = stream.u8()
+        read_unknown(stream, 0x00, 0x00, 0x00)  # perhaps u32?
+
+        control_behavior = entity.setdefault("control_behavior", {})
+        control_behavior["circuit_parameters"] = {
+            "instrument_id": instrument_id,
+            "note_id": note_id,
+            "signal_value_is_pitch": signal_value_is_pitch,
+        }
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_boiler(stream, index, entity):
+    read_unknown(stream)
+    ep_direction(stream, index, entity)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_generator(stream, index, entity):
+	read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+	read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+	read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+	read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+	ep_direction(stream, index, entity)
+	read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_solar_panel(stream, index, entity):
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_accumulator(stream, index, entity):
+    ep_entity_ids(stream, index, entity)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+    has_circuit_connections = stream.bool()
+    if has_circuit_connections:
+        # connections
+        ep_circuit_connections(stream, index, entity)
+
+        # output signal
+        output_signal = read_signal(stream, index)
+        control_behavior = entity["control_behavior"] = {
+            "output_signal": output_signal
+        }
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_reactor(stream, index, entity):
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_heat_pipe(stream, index, entity):
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_mining_drill(stream, index, entity):
+    ep_entity_ids(stream, index, entity)
+    ep_direction(stream, index, entity)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00)
+
+    is_pumpjack = stream.bool()     # 1 for pumpjack, 0 otherwise
+
+    read_unknown(stream)
+
+    # circuit network connections
+    has_circuit_connections = stream.bool()
+    if has_circuit_connections:
+        # connections
+        ep_circuit_connections(stream, index, entity)
+
+        # circuit condition & logistic condition
+        ep_circuit_condition(stream, index, entity)
+        ep_logistic_condition(stream, index, entity)
+
+        read_unknown(stream, 0x00, 0x00)
+
+        # mode of operation (specific for mining drill)
+
+        # maybe helpfull: https://lua-api.factorio.com/latest/defines.html#defines.control_behavior
+
+        control_behavior = entity.setdefault("control_behavior", {})
+
+        control_behavior["circuit_enable_disable"] = stream.bool()
+        control_behavior["circuit_read_resources"] = stream.bool()
+
+        read_unknown(stream)
+
+        control_behavior["circuit_resource_read_mode"] = stream.u8()
+
+        read_unknown(stream)
+
+    # modules
+    ep_items(stream, index, entity)
+
+    # Strange: only one trailing zero-byte instead of 5!
+    read_unknown(stream)
+
+
+def eh_offshore_pump(stream, index, entity):
+    ep_entity_ids(stream, index, entity)
+    ep_direction(stream, index, entity)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00)
+
+    # circuit network connections
+    has_circuit_connections = stream.bool()
+    if has_circuit_connections:
+        # connections
+        ep_circuit_connections(stream, index, entity)
+
+        # circuit condition & logistic condition
+        ep_circuit_condition(stream, index, entity)
+        ep_logistic_condition(stream, index, entity)
+
+        read_unknown(stream, 0x00, 0x00)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_furnace(stream, index, entity):
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    # modules
+    ep_items(stream, index, entity)
+    # Strange: only one trailing zero-byte instead of 5!
+    read_unknown(stream)
+
+
+def eh_assembling_machine(stream, index, entity):
+    read_unknown(stream)
+
+    recipe = read_name(stream, index, Index.RECIPE)
+    if recipe:
+        entity["recipe"] = recipe
+
+    ep_direction(stream, index, entity)
+
+    # modules
+    ep_items(stream, index, entity)
+
+    # Strange: only one trailing zero-byte instead of 5!
+    read_unknown(stream)
+
+
+def eh_lab(stream, index, entity):
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    ep_items(stream, index, entity)
+    read_unknown(stream)
+
+
+def eh_beacon(stream, index, entity):
+    read_unknown(stream, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f) # 1.0d
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    ep_items(stream, index, entity)
+    # Strange: only one trailing zero-byte instead of 5!
+    read_unknown(stream, 0x00)
+
+
+def eh_land_mine(stream, index, entity):
+    read_unknown(stream, 0x00, 0x78, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_wall(stream, index, entity):
+    ep_entity_ids(stream, index, entity)
+    read_unknown(stream)
+
+    has_circuit_connections = stream.bool()
+    if has_circuit_connections:
+        # connections
+        ep_circuit_connections(stream, index, entity)
+
+        control_behavior = entity["control_behavior"] = {}
+        control_behavior["circuit_open_gate"] = stream.bool()
+        control_behavior["circuit_read_sensor"] = stream.bool()
+
+        # TODO: Similar to signals in roboport. Examine "empty" signal encoding!
+        output_signal = read_signal(stream, index)
+        if output_signal != { "type": "virtual", "name": "signal-G" }:
+            control_behavior["output_signal"] = output_signal
+
+        ep_circuit_condition(stream, index, entity)
+        read_unknown(stream)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_gate(stream, index, entity):
+    read_unknown(stream)
+    ep_direction(stream, index, entity)
+
+    read_unknown(stream, 0x00, 0x00, 0x80, 0x3f)    # 1.0f
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_ammo_turret(stream, index, entity):
+    ep_turret_common(stream, index, entity)
+
+    # same for ammo-turret and electric-turret:
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x08) # maybe fixed "direction"
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0xff, 0xff, 0xff, 0xff)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00)
+
+
+def eh_electric_turret(stream, index, entity):
+    ep_turret_common(stream, index, entity)
+
+    # same for ammo-turret and electric-turret:
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x08) # maybe fixed "direction"
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0xff, 0xff, 0xff, 0xff)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00)
+
+
+def eh_fluid_turret(stream, index, entity):
+    ep_turret_common(stream, index, entity)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00)
+
+    ep_direction(stream, index, entity)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0xff, 0xff, 0xff, 0xff)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_artillery_turret(stream, index, entity):
+    ep_turret_common(stream, index, entity)
+
+    read_unknown(stream, 0xff, 0x7f)
+    read_unknown(stream, 0xff, 0xff, 0xff, 0x7f)
+    read_unknown(stream, 0xff, 0xff, 0xff, 0x7f)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+    ep_direction(stream, index, entity)
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0xff, 0xff, 0xff, 0x7f)
+    read_unknown(stream, 0xff, 0xff, 0xff, 0x7f)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x03, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x01, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x80, 0x3f) #1.0f
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+
+
+def eh_radar(stream, index, entity):
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x9a, 0x99, 0x19, 0x3e, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00)
+
+
+def eh_rocket_silo(stream, index, entity):
+    read_unknown(stream)
+
+    recipe = read_name(stream, index, Index.RECIPE)
+    if recipe:
+        entity["recipe"] = recipe
+
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    read_unknown(stream, 0x00, 0x00, 0x00)
+
+    auto_launch = stream.bool()
+    if auto_launch:
+        entity["auto_launch"] = True
+
+    ep_items(stream, index, entity)
+    # Strange: only one trailing zero-byte instead of 5!
+    read_unknown(stream)
+
+
+entity_handlers = {
+    # Logistics
+    "container": eh_container,
+    "logistic-container": eh_logistic_container,
+    "infinity-container": eh_infinity_container,
+    "storage-tank": eh_storage_tank,
+    "transport-belt": eh_transport_belt,
+    "underground-belt": eh_underground_belt,
+    "splitter": eh_splitter,
+    "inserter": eh_inserter,
+    "electric-pole": eh_electric_pole,
+    "pipe": eh_pipe,
+    "pipe-to-ground": eh_pipe_to_ground,
+    "pump": eh_pump,
+    "straight-rail": eh_straight_rail,
+    "curved-rail": eh_curved_rail,
+    "train-stop": eh_train_stop,
+    "rail-signal": eh_rail_signal,
+    "rail-chain-signal": eh_rail_chain_signal,
+    "locomotive": eh_locomotive,
+    "cargo-wagon" : eh_cargo_wagon,
+    "fluid-wagon": eh_fluid_wagon,
+    "artillery-wagon": eh_artillery_wagon,
+    "roboport": eh_roboport,
+    "lamp": eh_lamp,
+    "arithmetic-combinator": eh_arithmetic_combinator,
+    "decider-combinator": eh_decider_combinator,
+    "constant-combinator": eh_constant_combinator,
+    "power-switch": eh_power_switch,
+    "programmable-speaker": eh_programmable_speaker,
+    # Production
+    "boiler": eh_boiler,
+    "generator": eh_generator,
+    "solar-panel": eh_solar_panel,
+    "accumulator": eh_accumulator,
+    "reactor": eh_reactor,
+    "heat-pipe": eh_heat_pipe,
+    "mining-drill": eh_mining_drill,
+    "offshore-pump": eh_offshore_pump,
+    "furnace": eh_furnace,
+    "assembling-machine": eh_assembling_machine,
+    "lab": eh_lab,
+    "beacon": eh_beacon,
+    # Combat
+    "land-mine": eh_land_mine,
+    "wall": eh_wall,
+    "gate": eh_gate,
+    "ammo-turret": eh_ammo_turret,
+    "electric-turret": eh_electric_turret,
+    "fluid-turret": eh_fluid_turret,
+    "artillery-turret": eh_artillery_turret,
+    "radar": eh_radar,
+    "rocket-silo": eh_rocket_silo,
+}
+
+
+################################################################
+#
+# library -- utilities
+
+def parse_version(stream, result):
+    version = (
+        stream.u16(),
+        stream.u16(),
+        stream.u16(),
+        stream.u16(),
+    )
+    debug(f"version: {'.'.join(map(str, version))}")
+    result["version"] = version
+
+
+def parse_migrations(stream, result):
+    migrations = []
+    migration_count = stream.count8()
+    if opt.x:
+        debug(f"migrations: {migration_count}")
+    for m in range(migration_count):
+        mod_name = stream.string()
+        migration_file = stream.string()
+        if opt.x:
+            debug(f"    [{m}] mod '{mod_name}', migration '{migration_file}'")
+        migrations.append({
+            "mod_name": mod_name,
+            "migration_file": migration_file
+        })
+    if opt.x:
+        result["migrations"] = migrations
+
+
+def parse_index(stream, result):
+    index = Index()
+    index_dict = {}
+
+    prototype_count = stream.count16()
+    debug(f"used prototypes: {prototype_count}")
+    for p in range(prototype_count):
+        prototype_name = stream.string()
+        names = index_dict[prototype_name] = {}
+        if prototype_name == "tile":    # strange exception
+            name_count = stream.count8()
+            debug(f"    [{p}] prototype '{prototype_name}' - entries: {name_count}")
+            for n in range(name_count):
+                name_id = stream.u8()
+                name = stream.string()
+                debug(f"        [{n}] {name_id:02x} '{name}'")
+                names[name_id] = name
+                index.add(name_id, prototype_name, name)
+        else:
+            name_count = stream.count16()
+            debug(f"    [{p}] prototype '{prototype_name}' - entries: {name_count}")
+            for n in range(name_count):
+                name_id = stream.u16()
+                name = stream.string()
+                debug(f"        [{n}] {name_id:04x} '{name}'")
+                names[name_id] = name
+                index.add(name_id, prototype_name, name)
+
+    if index_dict and opt.x:
+        result["index"] = index_dict
+
+    return index
+
+
+object_prototypes = (
+    "blueprint",
+    "blueprint-book",
+    "deconstruction-item",
+    "upgrade-item",
+)
+
+def parse_library_objects(stream, index, result):
+
+    object_count = stream.count32()
+    verbose(f"\nlibrary objects: {object_count}")
+    objects = []
+    for o in range(object_count):
+        is_used = stream.bool()
+        if is_used:
+            verbose(f"\n[{o}] library slot: used")
+
+            # Interesting: Here is a rare redundancy.
+            object_prototype_by_byte = read_mapped8(stream, object_prototypes)
+
+            # See _generation_counter_ in parse_blueprint_library for details.
+            generation = stream.u32()
+
+            entry = read_entry(stream, index, Index.ITEM)
+            if not entry:
+                raise ParseError(f"found item ID 0x0000 at {stream.tell()-2:#x} where a real ID is required.")
+
+            if entry.prototype != object_prototype_by_byte:
+                raise ParseError(
+                    f"mismatch between content-type '{object_prototype_by_byte}'"
+                    f" and actual content item {entry.prototype}")
+
+            handler = object_handlers.get(entry.prototype, None)
+            if not handler:
+                raise ParseError(f"no handler for {entry.prototype}/{entry.name} ({entry.id:#x})")
+
+            handler_result = handler(stream, index)
+            handler_result["_generation_"] = generation
+            objects.append(handler_result)
+        else:
+            verbose(f"\n[{o}] library slot: free")
+            objects .append(None)
+
+    result["blueprints"] = objects
+
+
+def parse_icons(stream, index, result):
+    icons = []
+    icon_count = stream.count8()
+    if not icon_count:
+        return
+    debug(f"icons: {icon_count}")
+    for i in range(icon_count):
+        icon = read_signal(stream, index)
+        if icon:
+            debug(f"    [{i}] '{icon['type']}' / '{icon['name']}'")
+            icons.append(icon)
+        else:
+            debug(f"    [{i}] (none)")
+            icons.append(None)
+    if icons:
+        result["icons"] = icons
+
+
+def parse_snap_to_grid(stream, result):
+    snap_to_grid = stream.bool()
+    if snap_to_grid:
+        x = stream.u32()
+        y = stream.u32()
+        result["snap-to-grid"] = {
+            "x": x,
+            "y": y
+        }
+
+        absolute_snapping = stream.bool()
+        if absolute_snapping:
+            result["absolute-snapping"] = absolute_snapping
+
+def parse_entities(stream, index, result):
+    entities = result["entities"] = []
+
+    entity_count = stream.count32()
+    debug(f"entities: {entity_count}")
+    for e in range(entity_count):
+        file_position = stream.tell()
+
+        # type/name
+        entry = read_entry(stream, index, Index.ENTITY)
+        if not entry:
+            raise ParseError(f"found entity ID 0x0000 at {stream.tell()-2:#x} where a real ID is required.")
+
+        # position
+
+        # maybe helpfull: https://wiki.factorio.com/Data_types
+        # maybe helpfull: https://wiki.factorio.com/Types/Position
+        offset_x = stream.s16()     # lookahead
+        if offset_x == 0x7fff:
+            position = {
+                "x": stream.s32() / 256,
+                "y": stream.s32() / 256
+            }
+        else:
+            offset_y = stream.s16()
+            if entities:
+                last_position = entities[-1]["position"]
+                position = {
+                    "x": last_position["x"] + offset_x / 256,
+                    "y": last_position["y"] + offset_y / 256
+                }
+            else:
+                position = {
+                    "x": offset_x / 256,
+                    "y": offset_y / 256
+                }
+
+        # debug output
+        debug(f"    [{len(entities)}] @{file_position:#x} - "
+            f"x: {position['x']}, y: {position['y']}, "
+            f"'{entry.prototype}/{entry.name}'")
+
+        # attach entity
+        entity = {
+            "name": entry.name,
+            "position": position,
+        }
+        entities.append(entity)
+
+        # Strange: What is this?
+        read_unknown(stream, 0x20)
+
+        # parse entity details
+        handler = entity_handlers.get(entry.prototype, None)
+        if not handler:
+            raise ParseError(f"no entity handler for {entry.prototype}/{entry.name} ({entry.id:#x})")
+        handler(stream, index, entity)
+    
+    if not entities:
+        del result["entities"]
+
+
+def parse_schedules(stream, index, result):
+    schedules_count = stream.count8()
+    schedules = []
+    for sc in range(schedules_count):
+        schedule = {
+            "schedule": []
+        }
+
+        locomotives = schedule["locomotives"] = []
+        locomotive_count = stream.count8()
+        for lo in range(locomotive_count):
+            locomotive_id = stream.u32()
+            locomotives.append(locomotive_id)
+
+        station_count = stream.count8()
+        for st in range(station_count):
+            station = {
+                "station": stream.string(),
+                "wait_conditions": [],
+            }
+
+            wait_condition_count = stream.u32()
+            for wc in range(wait_condition_count):
+                wait_condition = {}
+
+                wait_condition_types = (
+                    "time",
+                    "full",
+                    "empty",
+                    "item_count",
+                    "circuit",
+                    "inactivity",
+                    None, # what is type 6?
+                    "fluid_count",
+                    "passenger_present",
+                    "passenger_not_present",
+                )
+                wait_condition["type"] = read_mapped8(stream, wait_condition_types)
+
+                wait_condition["compare_type"] = read_mapped8(stream, ("and", "or"))
+
+                ticks = stream.u16()
+                if ticks:
+                    # TODO: export features "ticks: 0" for "time" and "inactivity"
+                    wait_condition["ticks"] = ticks
+
+                read_unknown(stream, 0x00, 0x00)
+
+                condition = read_condition(stream, index)
+                if condition:
+                    wait_condition["condition"] = condition
+
+                station["wait_conditions"].append(wait_condition)
+
+            read_unknown(stream)
+
+            schedule["schedule"].append(station)
+
+        schedules.append(schedule)
+
+    if schedules:
+        result["schedules"] = schedules
+
+
+def parse_tiles(stream, index, result):
+    tiles = []
+    tile_count = stream.count32()
+    debug(f"tiles: {tile_count}")
+    for t in range(tile_count):
+        tiles.append({
+            "position": {
+                "x": stream.s32(),
+                "y": stream.s32()
+            },
+            # FIXME: guard against 0x00 IDs
+            "name": read_name(stream, index, Index.TILE)
+        })
+
+    if tiles:
+        result["tiles"] = tiles
+
+
+################################################################
+#
+# library -- primary objects
+
+def parse_blueprint_library(stream: PrimitiveStream):
+    result = {}
+
+    parse_version(stream, result)
+
+    read_unknown(stream)
+
+    parse_migrations(stream, result)
+
+    global_index = parse_index(stream, result)
+
+    read_unknown(stream, 0x00, 0x00)
+
+    # Adding a blueprint to the library increments the counter, deleting and moving does not.
+    # When a new blueprint is added to the library this global counter is copied to the new
+    # blueprint and incremened after that. This happens for each new blueprint, not per save.
+    generation_counter = stream.u32()
+    debug(f"generation counter: {generation_counter} ({generation_counter:#x})")
+    result["_generation_counter_"] = generation_counter
+
+    # unix timestamp
+    timestamp = stream.u32()    # u32/s32?
+    timestring = time.strftime("%FT%T%z", time.localtime(timestamp)) # localtime/gmtime?
+    # FIXME: use datetime.fromtimestamp(timestamp, timezone.utc) or something like that
+    debug(f"timestamp: {timestring}")
+    result["_save_timestamp_"] = timestring
+
+    read_unknown(stream, 0x01)
+
+    parse_library_objects(stream, global_index, result)
+
+    return result
+
+
+def parse_blueprint(stream: PrimitiveStream, index):
+    result = {
+        "item": "blueprint",
+    }
+
+    file_position = stream.tell()
+
+    label = result["label"] = stream.string()
+    verbose(f"blueprint '{label}' (@{file_position:#x})")
+
+    read_unknown(stream, 0x00, 0x00)
+
+    # might be "flexible size" marker for $content_size. But since the
+    # "migrations" section for 1.0.0.0 is already 347 bytes there is no
+    # way to check that.
+    read_unknown(stream, 0xff)
+    # Interesting: A rare redundancy. Could be used to fast skimming
+    # the library. Reasons: a) Speed, b) unparsable content due to mods/versions.
+    content_size = stream.u32()
+    content_start = stream.tell()
+
+    parse_version(stream, result)
+
+    read_unknown(stream)
+
+    parse_migrations(stream, result)
+
+    result["description"] = stream.string()
+
+    parse_snap_to_grid(stream, result)
+
+    parse_entities(stream, index, result)
+
+    parse_schedules(stream, index, result)
+
+    parse_tiles(stream, index, result)
+
+    read_unknown(stream)
+
+    parse_icons(stream, index, result)
+
+    content_end = stream.tell()
+    parsed_size = content_end - content_start
+    if parsed_size != content_size:
+        raise AssertionError(f"mismatch between declared blueprint size ({content_size})"
+            f" and parsed size ({parsed_size})")
+
+    return result
+
+
+def parse_blueprint_book(stream: PrimitiveStream, index):
+    result = {
+        "item": "blueprint-book",
+    }
+
+    file_position = stream.tell()
+
+    label = result["label"] = stream.string()
+    verbose(f"blueprint-book '{label}' (@{file_position:#x})")
+
+    result["description"] = stream.string()
+
+    read_unknown(stream)
+
+    parse_icons(stream, index, result)
+
+    parse_library_objects(stream, index, result)
+
+    active_index = stream.u8()
+    if active_index:
+        result["active_index"] = active_index
+
+    read_unknown(stream)
+
+    verbose(f"end of book '{label}' (@{stream.tell():#x})")
+
+    return result
+
+
+def parse_deconstruction_item(stream: PrimitiveStream, index):
+    def read_filter(section_name, type):
+        filters = []
+        filter_count = stream.u8()
+        debug(f"{section_name.replace('_', '-')}: {filter_count}")
+        for e in range(filter_count):
+            name = read_name(stream, index, type)
+            filters.append(name)
+        result["settings"][section_name] = filters
+
+    result = {
+        "item": "deconstruction-planner",
+        "settings": {},
+    }
+
+    file_position = stream.tell()
+
+    result["label"] = stream.string()
+    result["settings"]["description"] = stream.string()
+
+    verbose(f"deconstruction-item '{result['label']}' (@{file_position:#x})")
+
+    read_unknown(stream)
+
+    parse_icons(stream, index, result)
+
+    entity_filter_mode = stream.u8()
+    if entity_filter_mode:
+        result["settings"]["entity_filter_mode"] = entity_filter_mode
+
+    read_unknown(stream)
+
+    read_filter("entity_filters", Index.ENTITY)
+
+    trees_and_rocks_only = stream.bool()
+    if trees_and_rocks_only:
+        result["settings"]["trees_and_rocks_only"] = True
+
+    tile_filter_mode = stream.u8()
+    if tile_filter_mode:
+        result["settings"]["tile_filter_mode"] = tile_filter_mode
+
+    tile_selection_mode = stream.u8()
+    if tile_selection_mode:
+        result["settings"]["tile_selection_mode"] = tile_selection_mode
+
+    read_unknown(stream)
+
+    read_filter("tile_filters", Index.TILE)
+
+    return result
+
+
+def parse_upgrade_item(stream: PrimitiveStream, index):
+    result = {
+        "item": "upgrade-planner",
+        "settings": {}
+    }
+
+    file_position = stream.tell()
+
+    result["label"] = stream.string()
+    result["settings"]["description"] = stream.string()
+
+    verbose(f"upgrade-item '{result['label']}' (@{file_position:#x})")
+
+    read_unknown(stream)
+
+    parse_icons(stream, index, result)
+
+    read_unknown(stream)
+
+    def reader():
+        type = read_mapped8(stream, (Index.ENTITY, Index.ITEM))
+        name = read_name(stream, index, type)
+        if name:
+            return {
+                "type": type.value,
+                "name": name
+            }
+        else:
+            return None
+
+    mappers = []
+    mapper_count = stream.count8()
+    for m in range(mapper_count):
+        # see read_signal but the types are different
+        _from = reader()
+        _to = reader()
+        if _from or _to:
+            mappers.append({
+                "from": _from,
+                "to": _to
+            })
+        else:
+            mappers.append(None)
+
+    result["settings"]["mappers"] = mappers
+    return result
+
+
+object_handlers = {
+    "blueprint": parse_blueprint,
+    "blueprint-book": parse_blueprint_book,
+    "deconstruction-item": parse_deconstruction_item,
+    "upgrade-item": parse_upgrade_item,
+}
+
+
+################################################################
+#
+# main
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-v", "--verbose", action="store_true", dest="v",
+        help="verbose output on STDERR")
+    parser.add_argument("-d", "--debug", action="store_true", dest="d",
+        help="debug output on STDERR")
+    parser.add_argument("-x", "--extended", action="store_true", dest="x",
+        help="extended output: add voluminous stuff found .dat but not used in .export"
+        " Currently:\n - migrations\n - prototype index")
+    parser.add_argument("filename", nargs="?", default="blueprint-storage.dat")
+    opt = parser.parse_args()
+
+    verbose(f"file: {opt.filename}")
+    with open(opt.filename, "rb") as f:
+        library = parse_blueprint_library(PrimitiveStream(f))
+        print(json.dumps(library, indent=4, sort_keys=True, ensure_ascii=False))

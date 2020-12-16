@@ -60,4 +60,4 @@ clean:
 	../decode-export-string < $< | jq -S . > $@
 
 %.out %.err: %.dat
-	../decode.pl -dx $< > $*.out 2> $*.err
+	../decode -dx $< > $*.out 2> $*.err
