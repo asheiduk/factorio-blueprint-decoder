@@ -239,7 +239,7 @@ class PrimitiveStream:
         length = self.count()
         return self._f.read(length).decode("utf-8")
 
-    def mapped_u8(self, args):
+    def mapped_u8(self, *args):
         index = self.u8()
         if index in range(len(args)):
             return args[index]
@@ -300,7 +300,7 @@ def read_name(stream, index: Index, type: Index.Type) -> Index.Entry:
 
 
 def read_signal(stream, index: Index):
-    index_type = stream.mapped_u8((Index.ITEM, Index.FLUID, Index.VSIGNAL))
+    index_type = stream.mapped_u8(Index.ITEM, Index.FLUID, Index.VSIGNAL)
     name = read_name(stream, index, index_type)
     if not name:
         return None
@@ -313,7 +313,7 @@ def read_signal(stream, index: Index):
 # circuit condition, logistic condition, train schedules
 def read_condition(stream, index: Index):
     # same order in drop-down
-    comparator = stream.mapped_u8((">", "<", "=", "≥", "≤", "≠"))
+    comparator = stream.mapped_u8(">", "<", "=", "≥", "≤", "≠")
 
     first_signal = read_signal(stream, index)
     second_signal = read_signal(stream, index)
@@ -635,7 +635,7 @@ def eh_infinity_container(stream, index, entity):
     for f in range(filter_count):
         item_name = read_name(stream, index, Index.ITEM)
         item_count = stream.u32()
-        mode = stream.mapped_u8(("at-least", "at-most", "exactly"))
+        mode = stream.mapped_u8("at-least", "at-most", "exactly")
         filters.append({
             "name": item_name,
             "count": item_count,
@@ -704,7 +704,7 @@ def eh_transport_belt(stream, index, entity):
 def eh_underground_belt(stream, index, entity):
     stream.expect(0x00)
     ep_direction(stream, index, entity)
-    type = stream.mapped_u8(("input", "output"))
+    type = stream.mapped_u8("input", "output")
     entity["type"] = type
     stream.expect(0x00, 0x00, 0x00, 0x00, 0x00)
 
@@ -1156,7 +1156,7 @@ def eh_arithmetic_combinator(stream, index, entity):
     second_signal = read_signal(stream, index)
     output_signal = read_signal(stream, index)
     second_constant = stream.s32()
-    operation = stream.mapped_u8(("*", "/", "+", "-", "%", "^", "<<", ">>", "AND", "OR", "XOR"))
+    operation = stream.mapped_u8("*", "/", "+", "-", "%", "^", "<<", ">>", "AND", "OR", "XOR")
     use_second_constant = stream.bool()
     first_constant = stream.s32()
     use_first_constant = stream.bool()
@@ -1195,7 +1195,7 @@ def eh_decider_combinator(stream, index, entity):
     second_signal = read_signal(stream, index)
     output_signal = read_signal(stream, index)
     second_constant = stream.s32()
-    comparator = stream.mapped_u8((">", "<", "=", "≥", "≤", "≠"))
+    comparator = stream.mapped_u8(">", "<", "=", "≥", "≤", "≠")
 
     copy_count_from_input = stream.bool()
     use_constant = stream.bool()
@@ -1786,7 +1786,7 @@ def parse_library_objects(stream, index, result):
             verbose(f"\n[{o}] library slot: used")
 
             # Interesting: Here is a rare redundancy.
-            object_prototype_by_byte = stream.mapped_u8(object_prototypes)
+            object_prototype_by_byte = stream.mapped_u8(*object_prototypes)
 
             # See _generation_counter_ in parse_blueprint_library for details.
             generation = stream.u32()
@@ -1945,9 +1945,9 @@ def parse_schedules(stream, index, result):
                     "passenger_present",
                     "passenger_not_present",
                 )
-                wait_condition["type"] = stream.mapped_u8(wait_condition_types)
+                wait_condition["type"] = stream.mapped_u8(*wait_condition_types)
 
-                wait_condition["compare_type"] = stream.mapped_u8(("and", "or"))
+                wait_condition["compare_type"] = stream.mapped_u8("and", "or")
 
                 ticks = stream.u16()
                 if ticks:
@@ -2180,7 +2180,7 @@ def parse_upgrade_item(stream: PrimitiveStream, index):
     stream.expect(0x00)
 
     def reader():
-        type = stream.mapped_u8((Index.ENTITY, Index.ITEM))
+        type = stream.mapped_u8(Index.ENTITY, Index.ITEM)
         name = read_name(stream, index, type)
         if name:
             return {
