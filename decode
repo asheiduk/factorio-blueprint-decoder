@@ -257,16 +257,27 @@ class PrimitiveStream:
                 position = self.tell() - 1
                 raise ParseError(f"expected {expected:#04x} but got {actual:#04x} at position {position} ({position:#x})")
 
-    def dump_trailing_data(self):
-        def to_hex(s: str):
-            return " ".join([f'{b:02x}' for b in s])
+    def ignore(self, size, guess=None):
+        file_position = self.tell()
+        data = self._f.read(size)
+        data = self._to_hex(data)
 
+        if guess:
+            debug(f"#\tignored {guess} @{file_position:#x}: {data}")
+        else:
+            debug(f"#\tignored @{file_position:#x}: {data}")
+
+    def dump_trailing_data(self):
         position, data = self._f.tell(), self._f.read(16)
         if data:
             debug("trailing data:")
             while data:
-                debug(f"{position:06x}", to_hex(data))
+                debug(f"{position:06x}", self._to_hex(data))
                 position, data = self._f.tell(), self._f.read(16)
+
+    @staticmethod
+    def _to_hex(s: str):
+        return " ".join([f'{b:02x}' for b in s])
 
 
 ################################################################
@@ -334,20 +345,6 @@ def read_condition(stream, index: Index):
         condition["second_signal"] = second_signal
 
     return condition
-
-
-def read_ignore(stream: PrimitiveStream, size, guess=None):
-    file_position = stream.tell()
-    # FIXME: don't do this:
-    data = stream._f.read(size)
-    # data = " ".join( data.m)
-
-    data = " ".join([ hex(b).replace("0x", "") for b, in struct.iter_unpack("B", data) ])
-
-    if guess:
-        debug(f"#\tignored {guess} @{file_position:#x}: {data}")
-    else:
-        debug(f"#\tignored @{file_position:#x}: {data}")
 
 
 ################################################################
@@ -472,7 +469,7 @@ def ep_railway_vehicle_common(stream, index, entity):
     # 26 22 4f
     # e7 73 ed
     # ac d3 65
-    read_ignore(stream, 3, "train-id(?)")
+    stream.ignore(3, "train-id(?)")
 
     stream.expect(0x00, 0x00)
 
