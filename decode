@@ -21,6 +21,19 @@ def verbose(*args):
         print(*args, file=sys.stderr, flush=True)
 
 
+def normalize_float(value):
+    rounded = round(value)
+    if rounded == value:
+        return rounded
+    else:
+        return value
+
+
+def normalize_position(p):
+    p["x"] = normalize_float(p["x"])
+    p["y"] = normalize_float(p["y"])
+
+
 class ParseError(Exception):
     pass
 
@@ -815,6 +828,8 @@ def eh_inserter(stream, index, entity):
             "x": stream.f64(),
             "y": stream.f64()
         }
+        normalize_position(entity["drop_position"])
+        normalize_position(entity["pickup_position"])
 
     stream.expect(*[0x00]*5)
 
@@ -1829,6 +1844,8 @@ def parse_entities(stream, index, result):
                     "x": offset_x / 256,
                     "y": offset_y / 256
                 }
+
+        normalize_position(position)
 
         # debug output
         debug(f"    [{len(entities)}] @{file_position:#x} - "
