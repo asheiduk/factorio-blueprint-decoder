@@ -382,6 +382,9 @@ def ep_entity_ids(stream, index, entity):
 
 
 def ep_bar(stream, index, entity):
+    # TODO: cargo-wagon wants to call this not with a real entity
+    # but with an "inventory" wrapper. Handle this case better.
+
     # "Warehousing Mod" writes 2000 stacks but the UI reports 1800.
     bar = stream.u16()
     # The export format suppresses the default values. But these
@@ -1039,9 +1042,20 @@ def eh_cargo_wagon(stream, index, entity):
 
     stream.expect(*[0x00]*6)
 
-    ep_filters(stream, index, entity)
+    inventory = entity.setdefault("inventory", {})
 
+    ep_filters(stream, index, inventory)
+
+    # "filters" and "bar" are wrapped into "inventory".
+    # But `ep_bar` actualle requires a real entity argument. :-(
+    # TODO: better handling
     ep_bar(stream, index, entity)
+    bar = entity.get("bar", None)
+    if bar:
+        inventory["bar"] = bar
+        del entity["bar"]
+    if not inventory:
+        entity["inventory"] = None
 
     stream.expect(*[0x00]*5)
 
