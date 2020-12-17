@@ -2073,8 +2073,7 @@ def parse_blueprint_book(stream: PrimitiveStream, index):
     parse_library_objects(stream, index, result)
 
     active_index = stream.u8()
-    if active_index:
-        result["active_index"] = active_index
+    result["active_index"] = active_index
 
     stream.expect(0x00)
 
