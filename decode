@@ -1303,7 +1303,7 @@ def eh_programmable_speaker(stream, index, entity):
     ep_entity_ids(stream, index, entity)
 
     entity["parameters"] = {
-        "playback_volume": stream.f64(),
+        "playback_volume": normalize_float(stream.f64()),
         "playback_globally": stream.bool(),
         "allow_polyphony": stream.bool(),
     }
