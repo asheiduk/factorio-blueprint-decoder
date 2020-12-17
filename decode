@@ -416,8 +416,8 @@ def ep_direction(stream, index, entity):
 
 def ep_orientation(stream, index, entity):
     orientation = stream.f32()
-    if orientation:
-        entity["orientation"] = orientation
+    orientation = normalize_float(orientation)
+    entity["orientation"] = orientation
 
 
 def ep_circuit_connections(stream, index, entity, own_circuit_id="1"):
