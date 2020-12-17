@@ -808,6 +808,9 @@ def eh_inserter(stream, index, entity):
         if stack_control_input_signal:
             control_behavior["stack_control_input_signal"] = stack_control_input_signal
 
+        if not control_behavior:
+            del entity["control_behavior"]
+
         # End of "mode of operation"
 
     # item filters
