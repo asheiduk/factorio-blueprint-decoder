@@ -2027,7 +2027,9 @@ def parse_blueprint(stream: PrimitiveStream, index):
 
     parse_migrations(stream, result)
 
-    result["description"] = stream.string()
+    description = stream.string()
+    if description:
+        result["description"] = description
 
     parse_snap_to_grid(stream, result)
 
@@ -2060,7 +2062,9 @@ def parse_blueprint_book(stream: PrimitiveStream, index):
     label = result["label"] = stream.string()
     verbose(f"blueprint-book '{label}' (@{file_position:#x})")
 
-    result["description"] = stream.string()
+    description = stream.string()
+    if description:
+        result["description"] = description
 
     stream.expect(0x00)
 
@@ -2103,9 +2107,12 @@ def parse_deconstruction_item(stream: PrimitiveStream, index):
     file_position = stream.tell()
 
     result["label"] = stream.string()
-    result["settings"]["description"] = stream.string()
 
     verbose(f"deconstruction-item '{result['label']}' (@{file_position:#x})")
+
+    description = stream.string()
+    if description:
+        result["settings"]["description"] = description
 
     stream.expect(0x00)
 
@@ -2147,9 +2154,12 @@ def parse_upgrade_item(stream: PrimitiveStream, index):
     file_position = stream.tell()
 
     result["label"] = stream.string()
-    result["settings"]["description"] = stream.string()
 
     verbose(f"upgrade-item '{result['label']}' (@{file_position:#x})")
+
+    description = stream.string()
+    if description:
+        result["settings"]["description"] = description
 
     stream.expect(0x00)
 
