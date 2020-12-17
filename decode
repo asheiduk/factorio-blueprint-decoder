@@ -472,16 +472,17 @@ def ep_railway_vehicle_common(stream, index, entity):
 def ep_filters(stream, index, entity):
     # Even without filters the count is > 0 for filter-inserters.
     filter_count = stream.u8()
-    if not filter_count:
-        return
 
     filters = []
     for f in range(filter_count):
         filter_name = read_name(stream, index, Index.ITEM)
-        filters.append(filter_name)
-    entity["filters"] = filters
-    # TODO: The export file suppresses an empty list (or a list with only None entries).
-    # TODO: The export also uses a map, not an array, hence the items have an additional index field.
+        if filter_name:
+            filters.append({
+                "index": f + 1,
+                "name": filter_name
+            })
+    if filters:
+        entity["filters"] = filters
 
 
 def ep_items(stream, index, entity):
@@ -572,11 +573,10 @@ def eh_logistic_container(stream, index, entity):
         stream.expect(0x00)
         if item_name:
             request_filters.append({
+                "index": f + 1,
                 "name": item_name,
                 "count": item_count
             })
-        else:
-            request_filters.append(None)
     if filter_count > 0:
         # Strange: First occurance of the pattern that the list size affects
         # the presence/absence of data after the list.
@@ -584,7 +584,6 @@ def eh_logistic_container(stream, index, entity):
         if request_from_buffers:
             entity["request_from_buffers"] = True
 
-    # TODO: export compresses the filter list
     if request_filters:
         entity["request_filters"] = request_filters
 
@@ -627,6 +626,7 @@ def eh_infinity_container(stream, index, entity):
         item_count = stream.u32()
         mode = stream.mapped_u8("at-least", "at-most", "exactly")
         filters.append({
+            "index": f + 1,
             "name": item_name,
             "count": item_count,
             "mode": mode
@@ -1215,15 +1215,13 @@ def eh_constant_combinator(stream, index, entity):
         count = stream.s32()
         if signal:
             filters.append({
+                "index": f + 1,
                 "signal": signal,
                 "count": count
             })
-        else:
-            filters.append(None)
     if filters:
         control_behavior = entity.setdefault("control_behavior", {})
         # Export: Why "filter"? These are not filters.
-        # TODO: suppress empty signal list.
         control_behavior["filters"] = filters
 
     is_on = stream.bool()
@@ -1750,10 +1748,13 @@ def parse_library_objects(stream, index, result):
 
             handler_result = handler(stream, index)
             handler_result["_generation_"] = generation
-            objects.append(handler_result)
+            objects.append({
+                # Strange: This index is zero-based, not one-based.
+                "index": o,
+                "blueprint": handler_result
+            })
         else:
             verbose(f"\n[{o}] library slot: free")
-            objects .append(None)
 
     result["blueprints"] = objects
 
@@ -1768,10 +1769,12 @@ def parse_icons(stream, index, result):
         icon = read_signal(stream, index)
         if icon:
             debug(f"    [{i}] '{icon['type']}' / '{icon['name']}'")
-            icons.append(icon)
+            icons.append({
+                "index": i + 1,
+                "signal": icon
+            })
         else:
             debug(f"    [{i}] (none)")
-            icons.append(None)
     if icons:
         result["icons"] = icons
 
@@ -1834,6 +1837,7 @@ def parse_entities(stream, index, result):
 
         # attach entity
         entity = {
+            "entity_number": e + 1,
             "name": entry.name,
             "position": position,
         }
@@ -2058,8 +2062,14 @@ def parse_deconstruction_item(stream: PrimitiveStream, index):
         debug(f"{section_name.replace('_', '-')}: {filter_count}")
         for e in range(filter_count):
             name = read_name(stream, index, type)
-            filters.append(name)
-        result["settings"][section_name] = filters
+            if name:
+                filters.append({
+                    # Strange: This index is zero-based, not one-based.
+                    "index": e,
+                    "name": name
+                })
+        if filters:
+            result["settings"][section_name] = filters
 
     result = {
         "item": "deconstruction-planner",
@@ -2142,13 +2152,13 @@ def parse_upgrade_item(stream: PrimitiveStream, index):
         _to = reader()
         if _from or _to:
             mappers.append({
+                # Strange: This index is zero-based, not one-based.
+                "index": m,
                 "from": _from,
                 "to": _to
             })
-        else:
-            mappers.append(None)
-
-    result["settings"]["mappers"] = mappers
+    if mappers:
+        result["settings"]["mappers"] = mappers
     return result
 
 
