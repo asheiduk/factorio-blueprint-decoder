@@ -516,13 +516,13 @@ def ep_items(stream, index, entity):
 
 
 def ep_color(stream, index, entity):
-    use_colors = stream.bool()
-    if use_colors:
-        entity["colors"] = {
-            "r": stream.f32(),
-            "g": stream.f32(),
-            "b": stream.f32(),
-            "a": stream.f32()
+    use_color = stream.bool()
+    if use_color:
+        entity["color"] = {
+            "r": normalize_float(stream.f32()),
+            "g": normalize_float(stream.f32()),
+            "b": normalize_float(stream.f32()),
+            "a": normalize_float(stream.f32()),
         }
 
 
