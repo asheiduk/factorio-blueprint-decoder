@@ -906,8 +906,7 @@ def eh_train_stop(stream, index, entity):
     ep_entity_ids(stream, index, entity)
 
     station = stream.string()
-    if station:
-        entity["station"] = station
+    entity["station"] = station
 
     ep_direction(stream, index, entity)
 
