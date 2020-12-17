@@ -2115,7 +2115,8 @@ def parse_deconstruction_item(stream: PrimitiveStream, index):
 
     stream.expect(0x00)
 
-    parse_icons(stream, index, result)
+    # strange: Icons in "settings" instead of top-level.
+    parse_icons(stream, index, result["settings"])
 
     entity_filter_mode = stream.u8()
     if entity_filter_mode:
@@ -2162,7 +2163,8 @@ def parse_upgrade_item(stream: PrimitiveStream, index):
 
     stream.expect(0x00)
 
-    parse_icons(stream, index, result)
+    # strange: Icons in "settings" instead of top-level.
+    parse_icons(stream, index, result["settings"])
 
     stream.expect(0x00)
 
