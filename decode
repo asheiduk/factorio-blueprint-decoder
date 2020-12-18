@@ -1743,11 +1743,13 @@ def parse_index(stream, result):
     return index
 
 
+# Strange: Why the inconsistency between `-` vs. `_` and `*planner` vs. `*item`?
+# Strange: Why another piece of information alltogether?
 object_prototypes = (
-    "blueprint",
-    "blueprint-book",
-    "deconstruction-item",
-    "upgrade-item",
+    dict(key="blueprint", prototype="blueprint"),
+    dict(key="blueprint_book", prototype="blueprint-book"),
+    dict(key="deconstruction_planner", prototype="deconstruction_item"),
+    dict(key="upgrade_planner", prototype="upgrade_item"),
 )
 
 def parse_library_objects(stream, index, result):
@@ -1760,8 +1762,8 @@ def parse_library_objects(stream, index, result):
         if is_used:
             verbose(f"\n[{o}] library slot: used")
 
-            # Interesting: Here is a rare redundancy.
-            object_prototype_by_byte = stream.mapped_u8(*object_prototypes)
+            # Strange: Here is a rare redundancy with the prototype.
+            prefix = stream.mapped_u8(*object_prototypes)
 
             # See _generation_counter_ in parse_blueprint_library for details.
             generation = stream.u32()
@@ -1770,9 +1772,9 @@ def parse_library_objects(stream, index, result):
             if not entry:
                 raise ParseError(f"found item ID 0x0000 at {stream.tell()-2:#x} where a real ID is required.")
 
-            if entry.prototype != object_prototype_by_byte:
+            if entry.prototype != prefix["prototype"]:
                 raise ParseError(
-                    f"mismatch between content-type '{object_prototype_by_byte}'"
+                    f"mismatch between content-type '{prefix['prototype']}'"
                     f" and actual content item {entry.prototype}")
 
             handler = object_handlers.get(entry.prototype, None)
@@ -1785,7 +1787,7 @@ def parse_library_objects(stream, index, result):
             objects.append({
                 # Strange: This index is zero-based, not one-based.
                 "index": o,
-                "blueprint": handler_result
+                prefix["key"]: handler_result
             })
         else:
             verbose(f"\n[{o}] library slot: free")
