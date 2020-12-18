@@ -365,7 +365,7 @@ def read_condition(stream, index: Index):
 # entity parts (ep_*)
 
 
-def ep_entity_ids(stream, index, entity):
+def ep_entity_id(stream, index, entity):
     flags = stream.u8()
     # 0x10	-- has entity id (default=0)
     if flags | 0x10 != 0x10:
@@ -375,10 +375,15 @@ def ep_entity_ids(stream, index, entity):
         stream.expect(0x01)
         entity_id = stream.u32()
         entity["entity_id"] = entity_id
-        debug(f"\tentity-id: {entity_id}")
-        # TODO: in export "entity_"number" but "entity_id" in references.
-        # Also: EACH entity in the export has the number and entities are
-        # numbered 1..N.
+        # Note: The export format uses "entity_number" here but means index
+        # number in the entity list. This "entity_number" is referenced by
+        # "entity_id" in the wire connections.
+        #
+        # The binary format uses another value - an unique number.
+        # The code therefore uses the term "entity_id" for the raw binary
+        # number. This number and the counterparts in the wire connection
+        # and train schedules must be replaced later when all entities
+        # (and their *number*) known.
 
 
 def ep_bar(stream, index, entity):
@@ -436,8 +441,7 @@ def ep_circuit_connections(stream, index, entity, own_circuit_id="1"):
             circuit_id = stream.u8()
             peers.append({
                 "entity_id": entity_id,
-                # TODO: skip "circuit_id" for "simple" circuits
-                "circuit_id": circuit_id
+                "circuit_id": circuit_id,
             })
             stream.expect(0xff)
         if peers:
@@ -551,7 +555,7 @@ def ep_turret_common(stream, index, entity):
 def eh_container(stream, index, entity):
 
     # entity ids
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
 
     # restriction aka. "bar"
     ep_bar(stream, index, entity)
@@ -567,7 +571,7 @@ def eh_container(stream, index, entity):
 def eh_logistic_container(stream, index, entity):
 
     # entity ids
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
 
     # restriction aka. "bar"
     ep_bar(stream, index, entity)
@@ -618,7 +622,7 @@ def eh_logistic_container(stream, index, entity):
 def eh_infinity_container(stream, index, entity):
 
     # entity ids
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
 
     # restriction aka. "bar"
     ep_bar(stream, index, entity)
@@ -657,7 +661,7 @@ def eh_infinity_container(stream, index, entity):
 
 
 def eh_storage_tank(stream, index, entity):
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
     ep_direction(stream, index, entity)
 
     # circuit network connections
@@ -671,7 +675,7 @@ def eh_storage_tank(stream, index, entity):
 
 def eh_transport_belt(stream, index, entity):
 
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
     ep_direction(stream, index, entity)
 
     # circuit network connections
@@ -759,7 +763,7 @@ def eh_splitter(stream, index, entity):
 
 def eh_inserter(stream, index, entity):
     # entity ids
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
 
     # 0x01 -- override_stack_size
     # 0x02 -- filter_mode: 0=blacklist, 1(default)=whitelist
@@ -841,7 +845,7 @@ def eh_inserter(stream, index, entity):
 
 
 def eh_electric_pole(stream, index, entity):
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
 
     stream.expect(*[0x00]*4)
 
@@ -874,7 +878,7 @@ def eh_pipe_to_ground(stream, index, entity):
 
 def eh_pump(stream, index, entity):
 
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
     ep_direction(stream, index, entity)
 
     stream.expect(*[0x00]*20)
@@ -906,7 +910,7 @@ def eh_curved_rail(stream, index, entity):
 
 
 def eh_train_stop(stream, index, entity):
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
 
     station = stream.string()
     entity["station"] = station
@@ -955,7 +959,7 @@ def eh_train_stop(stream, index, entity):
 
 
 def eh_rail_signal(stream, index, entity):
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
     ep_direction(stream, index, entity)
 
     has_circuit_connections = stream.bool()
@@ -989,7 +993,7 @@ def eh_rail_signal(stream, index, entity):
 
 
 def eh_rail_chain_signal(stream, index, entity):
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
     ep_direction(stream, index, entity)
 
     has_circuit_connections = stream.bool()
@@ -1017,7 +1021,7 @@ def eh_rail_chain_signal(stream, index, entity):
 
 
 def eh_locomotive(stream, index, entity):
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
     stream.expect(0x00)
 
     ep_orientation(stream, index, entity)
@@ -1094,7 +1098,7 @@ def eh_artillery_wagon(stream, index, entity):
 
 
 def eh_roboport(stream, index, entity):
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
 
     has_circuit_connections = stream.bool()
     if has_circuit_connections:
@@ -1133,7 +1137,7 @@ def eh_roboport(stream, index, entity):
 
 
 def eh_lamp(stream, index, entity):
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
     has_circuit_connections = stream.bool()
     if has_circuit_connections:
         #connections
@@ -1153,7 +1157,7 @@ def eh_lamp(stream, index, entity):
 
 
 def eh_arithmetic_combinator(stream, index, entity):
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
     ep_direction(stream, index, entity)
 
     # connections
@@ -1192,7 +1196,7 @@ def eh_arithmetic_combinator(stream, index, entity):
 
 
 def eh_decider_combinator(stream, index, entity):
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
     ep_direction(stream, index, entity)
 
     # connections
@@ -1231,7 +1235,7 @@ def eh_decider_combinator(stream, index, entity):
 
 def eh_constant_combinator(stream, index, entity):
     # entity ids
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
 
     # circuit connections
     ep_circuit_connections(stream, index, entity)
@@ -1266,7 +1270,7 @@ def eh_constant_combinator(stream, index, entity):
 
 
 def eh_power_switch(stream, index, entity):
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
 
     stream.expect(*[0x00]*13)
 
@@ -1314,7 +1318,7 @@ def eh_power_switch(stream, index, entity):
 
 
 def eh_programmable_speaker(stream, index, entity):
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
 
     entity["parameters"] = {
         "playback_volume": normalize_float(stream.f64()),
@@ -1374,7 +1378,7 @@ def eh_solar_panel(stream, index, entity):
 
 
 def eh_accumulator(stream, index, entity):
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
 
     stream.expect(*[0x00]*13)
 
@@ -1401,7 +1405,7 @@ def eh_heat_pipe(stream, index, entity):
 
 
 def eh_mining_drill(stream, index, entity):
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
     ep_direction(stream, index, entity)
 
     stream.expect(*[0x00]*36)
@@ -1445,7 +1449,7 @@ def eh_mining_drill(stream, index, entity):
 
 
 def eh_offshore_pump(stream, index, entity):
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
     ep_direction(stream, index, entity)
 
     stream.expect(*[0x00]*4)
@@ -1510,7 +1514,7 @@ def eh_land_mine(stream, index, entity):
 
 
 def eh_wall(stream, index, entity):
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
     stream.expect(0x00)
 
     has_circuit_connections = stream.bool()
@@ -1748,8 +1752,8 @@ def parse_index(stream, result):
 object_prototypes = (
     dict(key="blueprint", prototype="blueprint"),
     dict(key="blueprint_book", prototype="blueprint-book"),
-    dict(key="deconstruction_planner", prototype="deconstruction_item"),
-    dict(key="upgrade_planner", prototype="upgrade_item"),
+    dict(key="deconstruction_planner", prototype="deconstruction-item"),
+    dict(key="upgrade_planner", prototype="upgrade-item"),
 )
 
 def parse_library_objects(stream, index, result):
@@ -1976,6 +1980,56 @@ def parse_tiles(stream, index, result):
         result["tiles"] = tiles
 
 
+def fixup_entity_ids(blueprint):
+
+    entities = blueprint.get("entities", None)
+    if not entities:
+        return
+
+    # make mapping entity_id -> entity_number
+    id_to_entity = {}
+    for entity in entities:
+        if "entity_id" in entity and "entity_number" in entity:
+            entity_id = entity["entity_id"]
+            del entity["entity_id"]
+            id_to_entity[entity_id] = entity
+
+    # apply mapping to all (remaining) occurrences of "entity_id" in
+    # connections (color wires and copper wires) and trains schedules
+
+    def walk(it):
+        if isinstance(it, dict):
+            # handle color- and copper wires in connections
+            if "entity_id" in it:
+                # update entity_id with value of entity_number
+                peer = id_to_entity[it["entity_id"]]
+                it["entity_id"] = peer["entity_number"]
+
+                # delete "circuit_id: 1" if the peer has only one circuit
+                if "circuit_id" in it:
+                    peer_name = peer["name"]
+                    # FIXME: what a hack!
+                    if peer_name not in ("arithmetic-combinator", "decider-combinator"):
+                        # TODO: check "prototype". not "name"
+                        #   XOR: both combinator leave some sentinel value in their entity.
+                        #   XOR: perhaps check the connections in peer: it may/must(?)
+                        # TODO: check for circuit "1"
+                        del it["circuit_id"]
+            # handle train schedules
+            elif "locomotives" in it:
+                debug("# update schedule")
+                it["locomotives"] = [ id_to_entity[l]["entity_number"] for l in it["locomotives"]]
+            else:
+                for value in it.values():
+                    walk(value)
+
+        elif isinstance(it, list):
+            for value in it:
+                walk(value)
+
+    walk(blueprint)
+
+
 ################################################################
 #
 # library -- primary objects
@@ -2058,6 +2112,8 @@ def parse_blueprint(stream: PrimitiveStream, index):
     stream.expect(0x00)
 
     parse_icons(stream, index, result)
+
+    fixup_entity_ids(result)
 
     content_end = stream.tell()
     parsed_size = content_end - content_start
