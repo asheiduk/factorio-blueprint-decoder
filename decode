@@ -2077,7 +2077,9 @@ def parse_blueprint(stream: PrimitiveStream, index):
 
     file_position = stream.tell()
 
-    label = result["label"] = stream.string()
+    label = stream.string()
+    if label:
+        result["label"] = label
     verbose(f"blueprint '{label}' (@{file_position:#x})")
 
     stream.expect(0x00, 0x00)
