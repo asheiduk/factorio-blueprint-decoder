@@ -1935,13 +1935,13 @@ def parse_schedules(stream, index, result):
                     "passenger_present",
                     "passenger_not_present",
                 )
-                wait_condition["type"] = stream.mapped_u8(*wait_condition_types)
+                condition_type = wait_condition["type"] = stream.mapped_u8(*wait_condition_types)
 
                 wait_condition["compare_type"] = stream.mapped_u8("and", "or")
 
                 ticks = stream.u16()
-                if ticks:
-                    # TODO: export features "ticks: 0" for "time" and "inactivity"
+                if ticks or condition_type in ("time", "inactivity"):
+                    # Strange: The export features "ticks: 0" for "time" and "inactivity".
                     wait_condition["ticks"] = ticks
 
                 stream.expect(0x00, 0x00)
