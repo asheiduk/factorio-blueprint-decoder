@@ -1671,6 +1671,8 @@ def parse_version(stream, result):
     )
     debug(f"version: {'.'.join(map(str, version))}")
     result["version"] = (version[0] << 48) + (version[1] << 32) + (version[2] << 16) + version[3]
+    if opt.x:
+        result["_version_"] = version
 
 
 def parse_migrations(stream, result):
@@ -1762,7 +1764,8 @@ def parse_library_objects(stream, index, result):
                 raise ParseError(f"no handler for {entry.prototype}/{entry.name} ({entry.id:#x})")
 
             handler_result = handler(stream, index)
-            handler_result["_generation_"] = generation
+            if opt.x:
+                handler_result["_generation_"] = generation
             objects.append({
                 # Strange: This index is zero-based, not one-based.
                 "index": o,
@@ -1977,14 +1980,16 @@ def parse_blueprint_library(stream: PrimitiveStream):
     # blueprint and incremened after that. This happens for each new blueprint, not per save.
     generation_counter = stream.u32()
     debug(f"generation counter: {generation_counter} ({generation_counter:#x})")
-    result["_generation_counter_"] = generation_counter
+    if opt.x:
+        result["_generation_counter_"] = generation_counter
 
     # unix timestamp
     timestamp = stream.u32()    # u32/s32?
     timestring = time.strftime("%FT%T%z", time.localtime(timestamp)) # localtime/gmtime?
     # FIXME: use datetime.fromtimestamp(timestamp, timezone.utc) or something like that
     debug(f"timestamp: {timestring}")
-    result["_save_timestamp_"] = timestring
+    if opt.x:
+        result["_save_timestamp_"] = timestring
 
     stream.expect(0x01)
 
