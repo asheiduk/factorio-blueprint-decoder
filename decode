@@ -1670,7 +1670,7 @@ def parse_version(stream, result):
         stream.u16(),
     )
     debug(f"version: {'.'.join(map(str, version))}")
-    result["version"] = version
+    result["version"] = (version[0] << 48) + (version[1] << 32) + (version[2] << 16) + version[3]
 
 
 def parse_migrations(stream, result):
