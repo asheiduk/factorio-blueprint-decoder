@@ -2035,10 +2035,18 @@ def fixup_entity_ids(blueprint):
 # library -- primary objects
 
 def parse_blueprint_library(stream: PrimitiveStream):
-    result = {}
+    result = {
+        "blueprint_book": {
+            "item": "blueprint-book",
+            "blueprints": [],
+            "version": None,
+        }
+    }
 
-    parse_version(stream, result)
-    library_version = result["version"]
+    book_item = result["blueprint_book"]
+
+    parse_version(stream, book_item)
+    library_version = book_item["version"]
 
     stream.expect(0x00)
 
@@ -2066,7 +2074,13 @@ def parse_blueprint_library(stream: PrimitiveStream):
 
     stream.expect(0x01)
 
-    parse_library_objects(stream, global_index, result, library_version)
+    parse_library_objects(stream, global_index, book_item, library_version)
+
+    book_item["label"] = timestring
+    book_item["description"] = \
+        f"filename: {opt.filename}\n" \
+        f"timestamp: {timestring}\n" \
+        f"generation: {generation_counter}\n"
 
     return result
 
