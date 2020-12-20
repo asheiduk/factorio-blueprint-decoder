@@ -21,6 +21,19 @@ def verbose(*args):
         print(*args, file=sys.stderr, flush=True)
 
 
+def normalize_float(value):
+    rounded = round(value)
+    if rounded == value:
+        return rounded
+    else:
+        return value
+
+
+def normalize_position(p):
+    p["x"] = normalize_float(p["x"])
+    p["y"] = normalize_float(p["y"])
+
+
 class ParseError(Exception):
     pass
 
@@ -352,7 +365,7 @@ def read_condition(stream, index: Index):
 # entity parts (ep_*)
 
 
-def ep_entity_ids(stream, index, entity):
+def ep_entity_id(stream, index, entity):
     flags = stream.u8()
     # 0x10	-- has entity id (default=0)
     if flags | 0x10 != 0x10:
@@ -362,13 +375,21 @@ def ep_entity_ids(stream, index, entity):
         stream.expect(0x01)
         entity_id = stream.u32()
         entity["entity_id"] = entity_id
-        debug(f"\tentity-id: {entity_id}")
-        # TODO: in export "entity_"number" but "entity_id" in references.
-        # Also: EACH entity in the export has the number and entities are
-        # numbered 1..N.
+        # Note: The export format uses "entity_number" here but means index
+        # number in the entity list. This "entity_number" is referenced by
+        # "entity_id" in the wire connections.
+        #
+        # The binary format uses another value - an unique number.
+        # The code therefore uses the term "entity_id" for the raw binary
+        # number. This number and the counterparts in the wire connection
+        # and train schedules must be replaced later when all entities
+        # (and their *number*) known.
 
 
 def ep_bar(stream, index, entity):
+    # TODO: cargo-wagon wants to call this not with a real entity
+    # but with an "inventory" wrapper. Handle this case better.
+
     # "Warehousing Mod" writes 2000 stacks but the UI reports 1800.
     bar = stream.u16()
     # The export format suppresses the default values. But these
@@ -403,8 +424,8 @@ def ep_direction(stream, index, entity):
 
 def ep_orientation(stream, index, entity):
     orientation = stream.f32()
-    if orientation:
-        entity["orientation"] = orientation
+    orientation = normalize_float(orientation)
+    entity["orientation"] = orientation
 
 
 def ep_circuit_connections(stream, index, entity, own_circuit_id="1"):
@@ -420,8 +441,7 @@ def ep_circuit_connections(stream, index, entity, own_circuit_id="1"):
             circuit_id = stream.u8()
             peers.append({
                 "entity_id": entity_id,
-                # TODO: skip "circuit_id" for "simple" circuits
-                "circuit_id": circuit_id
+                "circuit_id": circuit_id,
             })
             stream.expect(0xff)
         if peers:
@@ -472,16 +492,17 @@ def ep_railway_vehicle_common(stream, index, entity):
 def ep_filters(stream, index, entity):
     # Even without filters the count is > 0 for filter-inserters.
     filter_count = stream.u8()
-    if not filter_count:
-        return
 
     filters = []
     for f in range(filter_count):
         filter_name = read_name(stream, index, Index.ITEM)
-        filters.append(filter_name)
-    entity["filters"] = filters
-    # TODO: The export file suppresses an empty list (or a list with only None entries).
-    # TODO: The export also uses a map, not an array, hence the items have an additional index field.
+        if filter_name:
+            filters.append({
+                "index": f + 1,
+                "name": filter_name
+            })
+    if filters:
+        entity["filters"] = filters
 
 
 def ep_items(stream, index, entity):
@@ -502,13 +523,13 @@ def ep_items(stream, index, entity):
 
 
 def ep_color(stream, index, entity):
-    use_colors = stream.bool()
-    if use_colors:
-        entity["colors"] = {
-            "r": stream.f32(),
-            "g": stream.f32(),
-            "b": stream.f32(),
-            "a": stream.f32()
+    use_color = stream.bool()
+    if use_color:
+        entity["color"] = {
+            "r": normalize_float(stream.f32()),
+            "g": normalize_float(stream.f32()),
+            "b": normalize_float(stream.f32()),
+            "a": normalize_float(stream.f32()),
         }
 
 
@@ -534,7 +555,7 @@ def ep_turret_common(stream, index, entity):
 def eh_container(stream, index, entity):
 
     # entity ids
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
 
     # restriction aka. "bar"
     ep_bar(stream, index, entity)
@@ -550,7 +571,7 @@ def eh_container(stream, index, entity):
 def eh_logistic_container(stream, index, entity):
 
     # entity ids
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
 
     # restriction aka. "bar"
     ep_bar(stream, index, entity)
@@ -572,11 +593,10 @@ def eh_logistic_container(stream, index, entity):
         stream.expect(0x00)
         if item_name:
             request_filters.append({
+                "index": f + 1,
                 "name": item_name,
                 "count": item_count
             })
-        else:
-            request_filters.append(None)
     if filter_count > 0:
         # Strange: First occurance of the pattern that the list size affects
         # the presence/absence of data after the list.
@@ -584,7 +604,6 @@ def eh_logistic_container(stream, index, entity):
         if request_from_buffers:
             entity["request_from_buffers"] = True
 
-    # TODO: export compresses the filter list
     if request_filters:
         entity["request_filters"] = request_filters
 
@@ -603,7 +622,7 @@ def eh_logistic_container(stream, index, entity):
 def eh_infinity_container(stream, index, entity):
 
     # entity ids
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
 
     # restriction aka. "bar"
     ep_bar(stream, index, entity)
@@ -627,6 +646,7 @@ def eh_infinity_container(stream, index, entity):
         item_count = stream.u32()
         mode = stream.mapped_u8("at-least", "at-most", "exactly")
         filters.append({
+            "index": f + 1,
             "name": item_name,
             "count": item_count,
             "mode": mode
@@ -641,7 +661,7 @@ def eh_infinity_container(stream, index, entity):
 
 
 def eh_storage_tank(stream, index, entity):
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
     ep_direction(stream, index, entity)
 
     # circuit network connections
@@ -655,7 +675,7 @@ def eh_storage_tank(stream, index, entity):
 
 def eh_transport_belt(stream, index, entity):
 
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
     ep_direction(stream, index, entity)
 
     # circuit network connections
@@ -743,7 +763,7 @@ def eh_splitter(stream, index, entity):
 
 def eh_inserter(stream, index, entity):
     # entity ids
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
 
     # 0x01 -- override_stack_size
     # 0x02 -- filter_mode: 0=blacklist, 1(default)=whitelist
@@ -795,6 +815,9 @@ def eh_inserter(stream, index, entity):
         if stack_control_input_signal:
             control_behavior["stack_control_input_signal"] = stack_control_input_signal
 
+        if not control_behavior:
+            del entity["control_behavior"]
+
         # End of "mode of operation"
 
     # item filters
@@ -815,12 +838,14 @@ def eh_inserter(stream, index, entity):
             "x": stream.f64(),
             "y": stream.f64()
         }
+        normalize_position(entity["drop_position"])
+        normalize_position(entity["pickup_position"])
 
     stream.expect(*[0x00]*5)
 
 
 def eh_electric_pole(stream, index, entity):
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
 
     stream.expect(*[0x00]*4)
 
@@ -853,7 +878,7 @@ def eh_pipe_to_ground(stream, index, entity):
 
 def eh_pump(stream, index, entity):
 
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
     ep_direction(stream, index, entity)
 
     stream.expect(*[0x00]*20)
@@ -885,11 +910,10 @@ def eh_curved_rail(stream, index, entity):
 
 
 def eh_train_stop(stream, index, entity):
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
 
     station = stream.string()
-    if station:
-        entity["station"] = station
+    entity["station"] = station
 
     ep_direction(stream, index, entity)
 
@@ -935,7 +959,7 @@ def eh_train_stop(stream, index, entity):
 
 
 def eh_rail_signal(stream, index, entity):
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
     ep_direction(stream, index, entity)
 
     has_circuit_connections = stream.bool()
@@ -969,7 +993,7 @@ def eh_rail_signal(stream, index, entity):
 
 
 def eh_rail_chain_signal(stream, index, entity):
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
     ep_direction(stream, index, entity)
 
     has_circuit_connections = stream.bool()
@@ -997,7 +1021,7 @@ def eh_rail_chain_signal(stream, index, entity):
 
 
 def eh_locomotive(stream, index, entity):
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
     stream.expect(0x00)
 
     ep_orientation(stream, index, entity)
@@ -1022,9 +1046,20 @@ def eh_cargo_wagon(stream, index, entity):
 
     stream.expect(*[0x00]*6)
 
-    ep_filters(stream, index, entity)
+    inventory = entity.setdefault("inventory", {})
 
+    ep_filters(stream, index, inventory)
+
+    # "filters" and "bar" are wrapped into "inventory".
+    # But `ep_bar` actualle requires a real entity argument. :-(
+    # TODO: better handling
     ep_bar(stream, index, entity)
+    bar = entity.get("bar", None)
+    if bar:
+        inventory["bar"] = bar
+        del entity["bar"]
+    if not inventory:
+        entity["inventory"] = None
 
     stream.expect(*[0x00]*5)
 
@@ -1063,7 +1098,7 @@ def eh_artillery_wagon(stream, index, entity):
 
 
 def eh_roboport(stream, index, entity):
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
 
     has_circuit_connections = stream.bool()
     if has_circuit_connections:
@@ -1102,7 +1137,7 @@ def eh_roboport(stream, index, entity):
 
 
 def eh_lamp(stream, index, entity):
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
     has_circuit_connections = stream.bool()
     if has_circuit_connections:
         #connections
@@ -1122,7 +1157,7 @@ def eh_lamp(stream, index, entity):
 
 
 def eh_arithmetic_combinator(stream, index, entity):
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
     ep_direction(stream, index, entity)
 
     # connections
@@ -1161,7 +1196,7 @@ def eh_arithmetic_combinator(stream, index, entity):
 
 
 def eh_decider_combinator(stream, index, entity):
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
     ep_direction(stream, index, entity)
 
     # connections
@@ -1200,7 +1235,7 @@ def eh_decider_combinator(stream, index, entity):
 
 def eh_constant_combinator(stream, index, entity):
     # entity ids
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
 
     # circuit connections
     ep_circuit_connections(stream, index, entity)
@@ -1215,15 +1250,13 @@ def eh_constant_combinator(stream, index, entity):
         count = stream.s32()
         if signal:
             filters.append({
+                "index": f + 1,
                 "signal": signal,
                 "count": count
             })
-        else:
-            filters.append(None)
     if filters:
         control_behavior = entity.setdefault("control_behavior", {})
         # Export: Why "filter"? These are not filters.
-        # TODO: suppress empty signal list.
         control_behavior["filters"] = filters
 
     is_on = stream.bool()
@@ -1237,7 +1270,7 @@ def eh_constant_combinator(stream, index, entity):
 
 
 def eh_power_switch(stream, index, entity):
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
 
     stream.expect(*[0x00]*13)
 
@@ -1285,10 +1318,10 @@ def eh_power_switch(stream, index, entity):
 
 
 def eh_programmable_speaker(stream, index, entity):
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
 
     entity["parameters"] = {
-        "playback_volume": stream.f64(),
+        "playback_volume": normalize_float(stream.f64()),
         "playback_globally": stream.bool(),
         "allow_polyphony": stream.bool(),
     }
@@ -1345,7 +1378,7 @@ def eh_solar_panel(stream, index, entity):
 
 
 def eh_accumulator(stream, index, entity):
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
 
     stream.expect(*[0x00]*13)
 
@@ -1372,7 +1405,7 @@ def eh_heat_pipe(stream, index, entity):
 
 
 def eh_mining_drill(stream, index, entity):
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
     ep_direction(stream, index, entity)
 
     stream.expect(*[0x00]*36)
@@ -1416,7 +1449,7 @@ def eh_mining_drill(stream, index, entity):
 
 
 def eh_offshore_pump(stream, index, entity):
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
     ep_direction(stream, index, entity)
 
     stream.expect(*[0x00]*4)
@@ -1481,7 +1514,7 @@ def eh_land_mine(stream, index, entity):
 
 
 def eh_wall(stream, index, entity):
-    ep_entity_ids(stream, index, entity)
+    ep_entity_id(stream, index, entity)
     stream.expect(0x00)
 
     has_circuit_connections = stream.bool()
@@ -1657,7 +1690,9 @@ def parse_version(stream, result):
         stream.u16(),
     )
     debug(f"version: {'.'.join(map(str, version))}")
-    result["version"] = version
+    result["version"] = (version[0] << 48) + (version[1] << 32) + (version[2] << 16) + version[3]
+    if opt.x:
+        result["_version_"] = version
 
 
 def parse_migrations(stream, result):
@@ -1712,14 +1747,16 @@ def parse_index(stream, result):
     return index
 
 
+# Strange: Why the inconsistency between `-` vs. `_` and `*planner` vs. `*item`?
+# Strange: Why another piece of information alltogether?
 object_prototypes = (
-    "blueprint",
-    "blueprint-book",
-    "deconstruction-item",
-    "upgrade-item",
+    dict(key="blueprint", prototype="blueprint"),
+    dict(key="blueprint_book", prototype="blueprint-book"),
+    dict(key="deconstruction_planner", prototype="deconstruction-item"),
+    dict(key="upgrade_planner", prototype="upgrade-item"),
 )
 
-def parse_library_objects(stream, index, result):
+def parse_library_objects(stream, index, result, library_version):
 
     object_count = stream.count32()
     verbose(f"\nlibrary objects: {object_count}")
@@ -1729,8 +1766,8 @@ def parse_library_objects(stream, index, result):
         if is_used:
             verbose(f"\n[{o}] library slot: used")
 
-            # Interesting: Here is a rare redundancy.
-            object_prototype_by_byte = stream.mapped_u8(*object_prototypes)
+            # Strange: Here is a rare redundancy with the prototype.
+            prefix = stream.mapped_u8(*object_prototypes)
 
             # See _generation_counter_ in parse_blueprint_library for details.
             generation = stream.u32()
@@ -1739,21 +1776,25 @@ def parse_library_objects(stream, index, result):
             if not entry:
                 raise ParseError(f"found item ID 0x0000 at {stream.tell()-2:#x} where a real ID is required.")
 
-            if entry.prototype != object_prototype_by_byte:
+            if entry.prototype != prefix["prototype"]:
                 raise ParseError(
-                    f"mismatch between content-type '{object_prototype_by_byte}'"
+                    f"mismatch between content-type '{prefix['prototype']}'"
                     f" and actual content item {entry.prototype}")
 
             handler = object_handlers.get(entry.prototype, None)
             if not handler:
                 raise ParseError(f"no handler for {entry.prototype}/{entry.name} ({entry.id:#x})")
 
-            handler_result = handler(stream, index)
-            handler_result["_generation_"] = generation
-            objects.append(handler_result)
+            handler_result = handler(stream, index, library_version)
+            if opt.x:
+                handler_result["_generation_"] = generation
+            objects.append({
+                # Strange: This index is zero-based, not one-based.
+                "index": o,
+                prefix["key"]: handler_result
+            })
         else:
             verbose(f"\n[{o}] library slot: free")
-            objects .append(None)
 
     result["blueprints"] = objects
 
@@ -1768,10 +1809,12 @@ def parse_icons(stream, index, result):
         icon = read_signal(stream, index)
         if icon:
             debug(f"    [{i}] '{icon['type']}' / '{icon['name']}'")
-            icons.append(icon)
+            icons.append({
+                "index": i + 1,
+                "signal": icon
+            })
         else:
             debug(f"    [{i}] (none)")
-            icons.append(None)
     if icons:
         result["icons"] = icons
 
@@ -1827,6 +1870,8 @@ def parse_entities(stream, index, result):
                     "y": offset_y / 256
                 }
 
+        normalize_position(position)
+
         # debug output
         debug(f"    [{len(entities)}] @{file_position:#x} - "
             f"x: {position['x']}, y: {position['y']}, "
@@ -1834,6 +1879,7 @@ def parse_entities(stream, index, result):
 
         # attach entity
         entity = {
+            "entity_number": e + 1,
             "name": entry.name,
             "position": position,
         }
@@ -1889,13 +1935,13 @@ def parse_schedules(stream, index, result):
                     "passenger_present",
                     "passenger_not_present",
                 )
-                wait_condition["type"] = stream.mapped_u8(*wait_condition_types)
+                condition_type = wait_condition["type"] = stream.mapped_u8(*wait_condition_types)
 
                 wait_condition["compare_type"] = stream.mapped_u8("and", "or")
 
                 ticks = stream.u16()
-                if ticks:
-                    # TODO: export features "ticks: 0" for "time" and "inactivity"
+                if ticks or condition_type in ("time", "inactivity"):
+                    # Strange: The export features "ticks: 0" for "time" and "inactivity".
                     wait_condition["ticks"] = ticks
 
                 stream.expect(0x00, 0x00)
@@ -1934,6 +1980,56 @@ def parse_tiles(stream, index, result):
         result["tiles"] = tiles
 
 
+def fixup_entity_ids(blueprint):
+
+    entities = blueprint.get("entities", None)
+    if not entities:
+        return
+
+    # make mapping entity_id -> entity_number
+    id_to_entity = {}
+    for entity in entities:
+        if "entity_id" in entity and "entity_number" in entity:
+            entity_id = entity["entity_id"]
+            del entity["entity_id"]
+            id_to_entity[entity_id] = entity
+
+    # apply mapping to all (remaining) occurrences of "entity_id" in
+    # connections (color wires and copper wires) and trains schedules
+
+    def walk(it):
+        if isinstance(it, dict):
+            # handle color- and copper wires in connections
+            if "entity_id" in it:
+                # update entity_id with value of entity_number
+                peer = id_to_entity[it["entity_id"]]
+                it["entity_id"] = peer["entity_number"]
+
+                # delete "circuit_id: 1" if the peer has only one circuit
+                if "circuit_id" in it:
+                    peer_name = peer["name"]
+                    # FIXME: what a hack!
+                    if peer_name not in ("arithmetic-combinator", "decider-combinator"):
+                        # TODO: check "prototype". not "name"
+                        #   XOR: both combinator leave some sentinel value in their entity.
+                        #   XOR: perhaps check the connections in peer: it may/must(?)
+                        # TODO: check for circuit "1"
+                        del it["circuit_id"]
+            # handle train schedules
+            elif "locomotives" in it:
+                debug("# update schedule")
+                it["locomotives"] = [ id_to_entity[l]["entity_number"] for l in it["locomotives"]]
+            else:
+                for value in it.values():
+                    walk(value)
+
+        elif isinstance(it, list):
+            for value in it:
+                walk(value)
+
+    walk(blueprint)
+
+
 ################################################################
 #
 # library -- primary objects
@@ -1942,6 +2038,7 @@ def parse_blueprint_library(stream: PrimitiveStream):
     result = {}
 
     parse_version(stream, result)
+    library_version = result["version"]
 
     stream.expect(0x00)
 
@@ -1956,30 +2053,34 @@ def parse_blueprint_library(stream: PrimitiveStream):
     # blueprint and incremened after that. This happens for each new blueprint, not per save.
     generation_counter = stream.u32()
     debug(f"generation counter: {generation_counter} ({generation_counter:#x})")
-    result["_generation_counter_"] = generation_counter
+    if opt.x:
+        result["_generation_counter_"] = generation_counter
 
     # unix timestamp
     timestamp = stream.u32()    # u32/s32?
     timestring = time.strftime("%FT%T%z", time.localtime(timestamp)) # localtime/gmtime?
     # FIXME: use datetime.fromtimestamp(timestamp, timezone.utc) or something like that
     debug(f"timestamp: {timestring}")
-    result["_save_timestamp_"] = timestring
+    if opt.x:
+        result["_save_timestamp_"] = timestring
 
     stream.expect(0x01)
 
-    parse_library_objects(stream, global_index, result)
+    parse_library_objects(stream, global_index, result, library_version)
 
     return result
 
 
-def parse_blueprint(stream: PrimitiveStream, index):
+def parse_blueprint(stream: PrimitiveStream, index, library_version):
     result = {
         "item": "blueprint",
     }
 
     file_position = stream.tell()
 
-    label = result["label"] = stream.string()
+    label = stream.string()
+    if label:
+        result["label"] = label
     verbose(f"blueprint '{label}' (@{file_position:#x})")
 
     stream.expect(0x00, 0x00)
@@ -1999,7 +2100,9 @@ def parse_blueprint(stream: PrimitiveStream, index):
 
     parse_migrations(stream, result)
 
-    result["description"] = stream.string()
+    description = stream.string()
+    if description:
+        result["description"] = description
 
     parse_snap_to_grid(stream, result)
 
@@ -2013,6 +2116,8 @@ def parse_blueprint(stream: PrimitiveStream, index):
 
     parse_icons(stream, index, result)
 
+    fixup_entity_ids(result)
+
     content_end = stream.tell()
     parsed_size = content_end - content_start
     if parsed_size != content_size:
@@ -2022,9 +2127,10 @@ def parse_blueprint(stream: PrimitiveStream, index):
     return result
 
 
-def parse_blueprint_book(stream: PrimitiveStream, index):
+def parse_blueprint_book(stream: PrimitiveStream, index, library_version):
     result = {
         "item": "blueprint-book",
+        "version": library_version,
     }
 
     file_position = stream.tell()
@@ -2032,17 +2138,18 @@ def parse_blueprint_book(stream: PrimitiveStream, index):
     label = result["label"] = stream.string()
     verbose(f"blueprint-book '{label}' (@{file_position:#x})")
 
-    result["description"] = stream.string()
+    description = stream.string()
+    if description:
+        result["description"] = description
 
     stream.expect(0x00)
 
     parse_icons(stream, index, result)
 
-    parse_library_objects(stream, index, result)
+    parse_library_objects(stream, index, result, library_version)
 
     active_index = stream.u8()
-    if active_index:
-        result["active_index"] = active_index
+    result["active_index"] = active_index
 
     stream.expect(0x00)
 
@@ -2051,31 +2158,42 @@ def parse_blueprint_book(stream: PrimitiveStream, index):
     return result
 
 
-def parse_deconstruction_item(stream: PrimitiveStream, index):
+def parse_deconstruction_item(stream: PrimitiveStream, index, library_version):
     def read_filter(section_name, type):
         filters = []
         filter_count = stream.u8()
         debug(f"{section_name.replace('_', '-')}: {filter_count}")
         for e in range(filter_count):
             name = read_name(stream, index, type)
-            filters.append(name)
-        result["settings"][section_name] = filters
+            if name:
+                filters.append({
+                    # Strange: This index is zero-based, not one-based.
+                    "index": e,
+                    "name": name
+                })
+        if filters:
+            result["settings"][section_name] = filters
 
     result = {
         "item": "deconstruction-planner",
+        "version": library_version,
         "settings": {},
     }
 
     file_position = stream.tell()
 
     result["label"] = stream.string()
-    result["settings"]["description"] = stream.string()
 
     verbose(f"deconstruction-item '{result['label']}' (@{file_position:#x})")
 
+    description = stream.string()
+    if description:
+        result["settings"]["description"] = description
+
     stream.expect(0x00)
 
-    parse_icons(stream, index, result)
+    # strange: Icons in "settings" instead of top-level.
+    parse_icons(stream, index, result["settings"])
 
     entity_filter_mode = stream.u8()
     if entity_filter_mode:
@@ -2104,22 +2222,27 @@ def parse_deconstruction_item(stream: PrimitiveStream, index):
     return result
 
 
-def parse_upgrade_item(stream: PrimitiveStream, index):
+def parse_upgrade_item(stream: PrimitiveStream, index, library_version):
     result = {
         "item": "upgrade-planner",
+        "version": library_version,
         "settings": {}
     }
 
     file_position = stream.tell()
 
     result["label"] = stream.string()
-    result["settings"]["description"] = stream.string()
 
     verbose(f"upgrade-item '{result['label']}' (@{file_position:#x})")
 
+    description = stream.string()
+    if description:
+        result["settings"]["description"] = description
+
     stream.expect(0x00)
 
-    parse_icons(stream, index, result)
+    # strange: Icons in "settings" instead of top-level.
+    parse_icons(stream, index, result["settings"])
 
     stream.expect(0x00)
 
@@ -2142,13 +2265,13 @@ def parse_upgrade_item(stream: PrimitiveStream, index):
         _to = reader()
         if _from or _to:
             mappers.append({
+                # Strange: This index is zero-based, not one-based.
+                "index": m,
                 "from": _from,
                 "to": _to
             })
-        else:
-            mappers.append(None)
-
-    result["settings"]["mappers"] = mappers
+    if mappers:
+        result["settings"]["mappers"] = mappers
     return result
 
 
