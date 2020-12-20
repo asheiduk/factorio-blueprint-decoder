@@ -1756,7 +1756,7 @@ object_prototypes = (
     dict(key="upgrade_planner", prototype="upgrade-item"),
 )
 
-def parse_library_objects(stream, index, result):
+def parse_library_objects(stream, index, result, library_version):
 
     object_count = stream.count32()
     verbose(f"\nlibrary objects: {object_count}")
@@ -1785,7 +1785,7 @@ def parse_library_objects(stream, index, result):
             if not handler:
                 raise ParseError(f"no handler for {entry.prototype}/{entry.name} ({entry.id:#x})")
 
-            handler_result = handler(stream, index)
+            handler_result = handler(stream, index, library_version)
             if opt.x:
                 handler_result["_generation_"] = generation
             objects.append({
@@ -2038,6 +2038,7 @@ def parse_blueprint_library(stream: PrimitiveStream):
     result = {}
 
     parse_version(stream, result)
+    library_version = result["version"]
 
     stream.expect(0x00)
 
@@ -2065,12 +2066,12 @@ def parse_blueprint_library(stream: PrimitiveStream):
 
     stream.expect(0x01)
 
-    parse_library_objects(stream, global_index, result)
+    parse_library_objects(stream, global_index, result, library_version)
 
     return result
 
 
-def parse_blueprint(stream: PrimitiveStream, index):
+def parse_blueprint(stream: PrimitiveStream, index, library_version):
     result = {
         "item": "blueprint",
     }
@@ -2126,9 +2127,10 @@ def parse_blueprint(stream: PrimitiveStream, index):
     return result
 
 
-def parse_blueprint_book(stream: PrimitiveStream, index):
+def parse_blueprint_book(stream: PrimitiveStream, index, library_version):
     result = {
         "item": "blueprint-book",
+        "version": library_version,
     }
 
     file_position = stream.tell()
@@ -2144,7 +2146,7 @@ def parse_blueprint_book(stream: PrimitiveStream, index):
 
     parse_icons(stream, index, result)
 
-    parse_library_objects(stream, index, result)
+    parse_library_objects(stream, index, result, library_version)
 
     active_index = stream.u8()
     result["active_index"] = active_index
@@ -2156,7 +2158,7 @@ def parse_blueprint_book(stream: PrimitiveStream, index):
     return result
 
 
-def parse_deconstruction_item(stream: PrimitiveStream, index):
+def parse_deconstruction_item(stream: PrimitiveStream, index, library_version):
     def read_filter(section_name, type):
         filters = []
         filter_count = stream.u8()
@@ -2174,6 +2176,7 @@ def parse_deconstruction_item(stream: PrimitiveStream, index):
 
     result = {
         "item": "deconstruction-planner",
+        "version": library_version,
         "settings": {},
     }
 
@@ -2219,9 +2222,10 @@ def parse_deconstruction_item(stream: PrimitiveStream, index):
     return result
 
 
-def parse_upgrade_item(stream: PrimitiveStream, index):
+def parse_upgrade_item(stream: PrimitiveStream, index, library_version):
     result = {
         "item": "upgrade-planner",
+        "version": library_version,
         "settings": {}
     }
 
