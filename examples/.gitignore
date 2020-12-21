@@ -1,3 +1,6 @@
 *.out
 *.err
 *.json
+*.diff
+*.extr
+/diff-report.txt
