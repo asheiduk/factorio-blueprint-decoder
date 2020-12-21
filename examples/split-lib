@@ -1,0 +1,19 @@
+#!/bin/bash
+
+input="$1"
+base=${input%.*}
+
+echo "# splitting file $input"
+
+# by "index" attribute
+indices=$(jq '.blueprint_book.blueprints[].index' "$input" | xargs)
+echo "# found indices: $indices"
+
+for i in $indices
+do
+	output="$base-$((i+1)).extr"
+	echo "# extract index $i from $input to $output"
+
+	# by "index" attribute:
+	jq --argjson index "$i" '.blueprint_book.blueprints[] | select(.index == $index) | del(.index)' "$input" > "$output"
+done

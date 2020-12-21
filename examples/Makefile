@@ -1,63 +1,78 @@
 .DELETE_ON_ERROR:
 
-parsable_dats = \
-	bps-inserters.dat \
-	bps-connected-inserters.dat \
-	bps-inserters-circuit.dat \
-	bps-three-blueprints.dat \
-	bps-constant-combinator.dat \
-	bps-signal-names.dat \
-	bps-one-empty-blueprint.dat \
-	bps-chests.dat \
-	bps-pipes.dat \
-	bps-with-tiles.dat \
-	bps-empty.dat \
-	bps-books.dat \
-	bps-planner.dat \
-	bps-planner-ids.dat \
-	bps-belts.dat \
-	bps-electric-poles.dat \
-	bps-mining.dat \
-	bps-assembler.dat \
-	bps-furnaces.dat \
-	bps-tanks-pumps.dat \
-	bps-rails.dat \
-	bps-rail-signals.dat \
-	bps-train-stops.dat \
-	bps-power-entities.dat \
-	bps-combat-simple.dat \
-	bps-misc.dat \
-	bps-combinators.dat \
-	bps-lamps.dat \
-	bps-speakers.dat \
-	bps-power-switch.dat \
-	bps-switch+combinator.dat \
-	bps-turrets.dat \
-	bps-far-away.dat \
-	bps-trains.dat \
-	bps-train-schedules.dat \
-	bps-most-buildings.dat \
-	bps-train-colors.dat \
-	bps-miniloader.dat \
-	bps-ltn-trainstops.dat \
-	bps-miniloader-book.dat \
-
+# basics
+dats    = $(wildcard *.dat)
 exports = $(wildcard *.export)
 
-.PHONY: all json test clean
+# derived from basic
+diffs 	= $(exports:.export=.diff)
+extrs	= $(exports:.export=.extr)
 
-all: json test
+.PHONY: all json out extr diff clean
+
+all: json out diff diff-report.txt
 
 json: $(exports:.export=.json)
 
-test: $(parsable_dats:.dat=.out)
+out: $(dats:.dat=.out)
 
 clean:
 	-rm -f *.out *.err
 	-rm -f *.json
+	-rm -f *.diff *.extr
+	-rm -f diff-report.txt
+
+# decode *.export to json
 
 %.json: %.export
 	../decode-export-string < $< | jq -S . > $@
 
+# decode *.dat to *.out / *.err
+
 %.out %.err: %.dat
-	../decode -dx $< > $*.out 2> $*.err
+	../decode -d $< > $*.out 2> $*.err
+
+# extract each top-level object from *.out into *-$N.extr with $N = (index_number+1)
+
+extr: $(extrs)
+
+# libraries with only one object
+%.extr: %.out
+	jq '.blueprint_book.blueprints[0] | del(.index)' < $*.out > $*.extr
+
+# libraries with multiple objects
+%.extr:
+	./split-lib $<
+
+# compare each *.json to *.extr
+
+diff: $(diffs)
+
+
+%.diff: %.json %.extr
+	diff $*.json $*.extr > $@ 2>&1
+
+# merge all *.diff into one report
+diff-report.txt: $(diffs)
+	for d in $(sort $(diffs)); do echo "#### $$d"; cat $$d; done > $@ 2>&1
+
+# ---------------------
+# dependencies between libraries with multiple objects to their extracted objects
+# ---------------------
+
+bps-planner-ids-1.extr bps-planner-ids-2.extr bps-planner-ids-3.extr bps-planner-ids-4.extr \
+bps-planner-ids-5.extr bps-planner-ids-6.extr bps-planner-ids-7.extr : bps-planner-ids.out
+
+bps-pipes-1.extr bps-pipes-2.extr: bps-pipes.out
+
+bps-far-away-1.extr bps-far-away-2.extr: bps-far-away.out
+
+bps-planner-1.extr bps-planner-2.extr \
+bps-planner-3.extr bps-planner-4.extr \
+bps-planner-8.extr: bps-planner.out
+
+bps-with-tiles-1.extr bps-with-tiles-2.extr: bps-with-tiles.out
+
+bps-three-blueprints-1.extr bps-three-blueprints-7.extr bps-three-blueprints-13.extr: bps-three-blueprints.out
+
+bps-trains-1.extr bps-trains-2.extr: bps-trains.out
