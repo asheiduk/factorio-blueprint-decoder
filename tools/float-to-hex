@@ -1,0 +1,49 @@
+#!/usr/bin/python3
+
+# Show floats/doubles encoded as hex.
+
+from struct import pack
+import sys
+
+
+def to_hex(s: str):
+    return " ".join([f'{b:02x}' for b in s])
+
+def as_hex(value: float):
+    print(f"#")
+    print(f"# {value:g}")
+    print(f"#\tfloat : {to_hex(pack('<f', value))}")
+    print(f"#\tdouble: {to_hex(pack('<d', value))}")
+
+args = sys.argv[1:] or (0.0, 0.125, 0.25, 0.5, 0.75, 1.0, -1.0, 42.42)
+
+for a in args:
+    as_hex(float(a))
+
+
+#########################################
+#
+# 0:
+#	float : 00 00 00 00
+#	double: 00 00 00 00 00 00 00 00
+# 0.125:
+#	float : 00 00 00 3e
+#	double: 00 00 00 00 00 00 c0 3f
+# 0.25:
+#	float : 00 00 80 3e
+#	double: 00 00 00 00 00 00 d0 3f
+# 0.5:
+#	float : 00 00 00 3f
+#	double: 00 00 00 00 00 00 e0 3f
+# 0.75:
+#	float : 00 00 40 3f
+#	double: 00 00 00 00 00 00 e8 3f
+# 1:
+#	float : 00 00 80 3f
+#	double: 00 00 00 00 00 00 f0 3f
+# 42:
+#	float : 00 00 28 42
+#	double: 00 00 00 00 00 00 45 40
+# 42.42:
+#	float : 14 ae 29 42
+#	double: f6 28 5c 8f c2 35 45 40
