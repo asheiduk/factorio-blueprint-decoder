@@ -2302,7 +2302,11 @@ def parse_blueprint_library(stream: PrimitiveStream):
 
     global_index = parse_index(stream, result)
 
-    stream.expect(0x00, 0x00)
+    # unknown strange thing: mostly 0x00 but sometimes 0x03 and in one case
+    # even 0x0e! So more probably a counter than some flags.
+    stream.ignore(1, "library state(?)")
+
+    stream.expect(0x00)
 
     # Adding a blueprint to the library increments the counter, deleting and moving does not.
     # When a new blueprint is added to the library this global counter is copied to the new
