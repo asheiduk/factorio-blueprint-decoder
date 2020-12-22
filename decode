@@ -291,12 +291,16 @@ class PrimitiveStream:
         if data:
             debug("trailing data:")
             while data:
-                debug(f"{position:06x}", self._to_hex(data))
+                debug(f"{position:06x}", self._to_hex(data), self._to_print(data))
                 position, data = self._f.tell(), self._f.read(16)
 
     @staticmethod
     def _to_hex(s: str):
         return " ".join([f'{b:02x}' for b in s])
+
+    @staticmethod
+    def _to_print(s: str):
+        return "".join([b if b.isprintable() else "." for b in s.decode("latin1")])
 
 
 ################################################################
