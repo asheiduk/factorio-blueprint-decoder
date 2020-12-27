@@ -114,6 +114,7 @@ class Index:
         "lab": ENTITY,
         "lamp": ENTITY,
         "land-mine": ENTITY,
+        "loader": ENTITY,
         "locomotive": ENTITY,
         "logistic-container": ENTITY,
         "mining-drill": ENTITY,
@@ -1622,6 +1623,18 @@ def eh_rocket_silo(stream, index, entity):
     stream.expect(0x00)
 
 
+def eh_loader(stream, index, entity):
+    stream.expect(0x00, 0x00)
+
+    type = stream.mapped_u8("input", "output")
+    entity["type"] = type
+
+    stream.expect(*[0x00]*4)
+    ep_filters(stream, index, entity)
+
+    stream.expect(*[0x00]*5)
+
+
 entity_handlers = {
     # Logistics
     "container": eh_container,
@@ -1675,6 +1688,8 @@ entity_handlers = {
     "artillery-turret": eh_artillery_turret,
     "radar": eh_radar,
     "rocket-silo": eh_rocket_silo,
+    # Infinity / Cheat Mode
+    "loader": eh_loader,
 }
 
 
