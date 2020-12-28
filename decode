@@ -97,6 +97,7 @@ class Index:
         "container": ENTITY,
         "curved-rail": ENTITY,
         "decider-combinator": ENTITY,
+        "electric-energy-interface": ENTITY,
         "electric-pole": ENTITY,
         "electric-turret": ENTITY,
         "entity-ghost": ENTITY,
@@ -106,8 +107,10 @@ class Index:
         "furnace": ENTITY,
         "gate": ENTITY,
         "generator": ENTITY,
+        "heat-interface": ENTITY,
         "heat-pipe": ENTITY,
         "infinity-container": ENTITY,
+        "infinity-pipe": ENTITY,
         "inserter": ENTITY,
         "item-entity": ENTITY,
         "item-request-proxy": ENTITY,
@@ -1635,6 +1638,58 @@ def eh_loader(stream, index, entity):
     stream.expect(*[0x00]*5)
 
 
+def eh_electric_energy_interface(stream, index, entity):
+    stream.expect(0x00)
+
+    power_production = stream.f64()
+    # strange default
+    if power_production != 1e11 / 12:
+        entity["power_production"] = power_production
+
+    power_usage = stream.f64()
+    if power_usage:
+        entity["power_usage"] = power_usage
+
+    stream.expect(*[0x00]*13)
+
+    buffer_size = stream.f64()
+    entity["buffer_size"] = buffer_size
+
+    stream.expect(*[0x00]*13)
+
+
+def eh_infinity_pipe(stream, index, entity):
+
+    stream.expect(0x00)
+
+    fluid_name = read_name(stream, index, Index.FLUID)
+    percentage = stream.f64()
+    temperature = stream.f64()
+    mode = stream.mapped_u8("at-least", "at-most", "exactly")
+
+    if fluid_name:
+        entity["infinity_settings"] = {
+            "name": fluid_name,
+            "percentage": percentage,
+            "temperature": temperature,
+            "mode": mode
+        }
+
+    stream.expect(*[0x00]*5)
+
+
+def eh_heat_interface(stream, index, entity):
+    stream.expect(0x00)
+
+    temperature = stream.f64()
+    entity["temperature"] = temperature
+
+    mode = stream.mapped_u8("at-least", "at-most", "exactly")
+    entity["mode"] = mode
+
+    stream.expect(*[0x00]*5)
+
+
 entity_handlers = {
     # Logistics
     "container": eh_container,
@@ -1690,6 +1745,9 @@ entity_handlers = {
     "rocket-silo": eh_rocket_silo,
     # Infinity / Cheat Mode
     "loader": eh_loader,
+    "electric-energy-interface": eh_electric_energy_interface,
+    "infinity-pipe": eh_infinity_pipe,
+    "heat-interface": eh_heat_interface,
 }
 
 
