@@ -170,6 +170,8 @@ class Index:
     def add(self, id: int, prototype: str, name: str) -> Entry:
         if id == 0x00:
             raise ValueError("ID 0 is not allowed")
+        if prototype not in self._type_mapping:
+            raise KeyError(f"unknown prototype '{prototype}'")
         type = self._type_mapping[prototype]
         bucket = self._data[type]
         if id in bucket:
