@@ -295,12 +295,12 @@ class PrimitiveStream:
                 position, data = self._f.tell(), self._f.read(16)
 
     @staticmethod
-    def _to_hex(s: str):
-        return " ".join([f'{b:02x}' for b in s])
+    def _to_hex(data: bytes):
+        return " ".join([f'{b:02x}' for b in data])
 
     @staticmethod
-    def _to_print(s: str):
-        return "".join([b if b.isprintable() else "." for b in s.decode("latin1")])
+    def _to_print(data: bytes):
+        return "".join([b if b.isprintable() else "." for b in data.decode("latin1")])
 
 
 ################################################################
@@ -325,7 +325,7 @@ def read_entry(stream, index: Index, type: Index.Type) -> Index.Entry:
         return None
 
 
-def read_name(stream, index: Index, type: Index.Type) -> Index.Entry:
+def read_name(stream, index: Index, type: Index.Type) -> str:
     entry = read_entry(stream, index, type)
     if entry:
         return entry.name
