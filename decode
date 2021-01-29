@@ -1651,11 +1651,11 @@ def eh_electric_energy_interface(stream, index, entity):
     power_production = stream.f64()
     # strange default
     if power_production != 1e11 / 12:
-        entity["power_production"] = power_production
+        entity["power_production"] = normalize_float(power_production)
 
     power_usage = stream.f64()
     if power_usage:
-        entity["power_usage"] = power_usage
+        entity["power_usage"] = normalize_float(power_usage)
 
     stream.expect(*[0x00]*8)
 
@@ -1665,7 +1665,7 @@ def eh_electric_energy_interface(stream, index, entity):
     stream.expect(*[0x00]*4)
 
     buffer_size = stream.f64()
-    entity["buffer_size"] = buffer_size
+    entity["buffer_size"] = normalize_float(buffer_size)
 
     stream.expect(*[0x00]*13)
 
@@ -1682,8 +1682,8 @@ def eh_infinity_pipe(stream, index, entity):
     if fluid_name:
         entity["infinity_settings"] = {
             "name": fluid_name,
-            "percentage": percentage,
-            "temperature": temperature,
+            "percentage": normalize_float(percentage),
+            "temperature": normalize_float(temperature),
             "mode": mode
         }
 
@@ -1694,7 +1694,7 @@ def eh_heat_interface(stream, index, entity):
     stream.expect(0x00)
 
     temperature = stream.f64()
-    entity["temperature"] = temperature
+    entity["temperature"] = normalize_float(temperature)
 
     mode = stream.mapped_u8("at-least", "at-most", "exactly")
     entity["mode"] = mode
