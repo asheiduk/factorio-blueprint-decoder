@@ -71,8 +71,6 @@ bps-planner-1.extr bps-planner-2.extr \
 bps-planner-3.extr bps-planner-4.extr \
 bps-planner-8.extr: bps-planner.out
 
-bps-with-tiles-1.extr bps-with-tiles-2.extr: bps-with-tiles.out
-
 bps-three-blueprints-1.extr bps-three-blueprints-7.extr bps-three-blueprints-13.extr: bps-three-blueprints.out
 
 bps-trains-1.extr bps-trains-2.extr: bps-trains.out
