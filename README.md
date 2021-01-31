@@ -42,7 +42,7 @@ The script requires [Python] 3.6 (or higher) installed.
 
 `decode` converts a `*.dat` file into JSON:
 
-	./decode examples/bps-pipes.dat > /tmp/bps-pipes.json
+	./decode tests/v1.0.0/bps-pipes.dat > /tmp/bps-pipes.json
 
 `encode-export-string` converts JSON into a packed import/export string:
 

@@ -25,12 +25,12 @@ clean:
 # decode *.export to json
 
 %.json: %.export
-	../decode-export-string < $< | jq -S . > $@
+	../../decode-export-string < $< | jq -S . > $@
 
 # decode *.dat to *.out / *.err
 
 %.out %.err: %.dat
-	../decode -d $< > $*.out 2> $*.err
+	../../decode -d $< > $*.out 2> $*.err
 
 # extract each top-level object from *.out into *-$N.extr with $N = (index_number+1)
 
@@ -42,7 +42,7 @@ extr: $(extrs)
 
 # libraries with multiple objects
 %.extr:
-	./split-lib $<
+	../tools/split-lib $<
 
 # compare each *.json to *.extr
 
