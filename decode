@@ -1067,6 +1067,10 @@ def eh_rail_chain_signal(stream, index, entity):
     ep_entity_id(stream, index, entity)
     ep_direction(stream, index, entity)
 
+    if version >= STABLE_1_1_19_0:
+        # strange: a new flag for nothing visible?
+        stream.expect(0x01)
+
     has_circuit_connections = stream.bool()
     if has_circuit_connections:
         # connections
