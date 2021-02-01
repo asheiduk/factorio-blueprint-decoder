@@ -1985,16 +1985,22 @@ def parse_icons(stream, index, result):
 def parse_snap_to_grid(stream, result):
     snap_to_grid = stream.bool()
     if snap_to_grid:
-        x = stream.u32()
-        y = stream.u32()
         result["snap-to-grid"] = {
-            "x": x,
-            "y": y
+            "x": stream.u32(),
+            "y": stream.u32()
         }
 
         absolute_snapping = stream.bool()
         if absolute_snapping:
             result["absolute-snapping"] = absolute_snapping
+            if version >= STABLE_1_1_19_0:
+                relative = {
+                    "x": stream.s32(),
+                    "y": stream.s32()
+                }
+                if relative != {"x": 0, "y": 0}:
+                    result["position-relative-to-grid"] = relative
+
 
 def parse_entities(stream, index, result):
     entities = result["entities"] = []
