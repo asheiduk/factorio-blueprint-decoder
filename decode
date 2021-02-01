@@ -531,6 +531,7 @@ def ep_railway_vehicle_common(stream, index, entity):
     # 26 22 4f
     # e7 73 ed
     # ac d3 65
+    # Seems to be stuck at (0,0,0) since v.1.1.19 or v1.1.21.
     stream.ignore(3, "train-id(?)")
 
     stream.expect(0x00, 0x00)
@@ -988,6 +989,7 @@ def eh_train_stop(stream, index, entity):
 
     ep_direction(stream, index, entity)
 
+    set_trains_limit = False
     has_circuit_connections = stream.bool()
     if has_circuit_connections:
         # connections
@@ -1017,6 +1019,7 @@ def eh_train_stop(stream, index, entity):
         # Why two flags (read_stopped_train and train_stopped_flag)?
         if read_stopped_train:
             control_behavior["read_stopped_train"] = True
+        # since v1.1.19 this flag seems to be stuck at 0x01
         train_stopped_flag = stream.bool()
         train_stopped_signal = read_signal(stream, index)
         if train_stopped_flag:
@@ -1024,7 +1027,29 @@ def eh_train_stop(stream, index, entity):
 
         stream.expect(*[0x00]*4)
 
+        if version >= STABLE_1_1_19_0:
+            read_trains_count = stream.bool()
+            trains_count_signal = read_signal(stream, index)
+            if read_trains_count:
+                control_behavior["read_trains_count"] = read_trains_count
+                control_behavior["trains_count_signal"] = trains_count_signal
+
+            set_trains_limit = stream.bool()
+            trains_limit_signal = read_signal(stream, index)
+            if set_trains_limit:
+                control_behavior["set_trains_limit"] = set_trains_limit
+                control_behavior["trains_limit_signal"] = trains_limit_signal
+
     ep_color(stream, index, entity)
+
+    if version >= STABLE_1_1_19_0:
+        # -1: unset, so 0 is a valid value
+        manual_trains_limit = stream.s32()
+        # strange: First time information (set_trains_limit) of an optional
+        #   block is needed outside that block. And just for filtering a value!
+        if manual_trains_limit >= 0 and not set_trains_limit:
+            entity["manual_trains_limit"] = manual_trains_limit
+        stream.expect(0x00)
 
     stream.expect(*[0x00]*5)
 
