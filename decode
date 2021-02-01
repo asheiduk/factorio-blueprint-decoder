@@ -650,15 +650,22 @@ def eh_logistic_container(stream, index, entity):
                 "name": item_name,
                 "count": item_count
             })
-    if filter_count > 0:
-        # Strange: First occurance of the pattern that the list size affects
-        # the presence/absence of data after the list.
+    if request_filters:
+        entity["request_filters"] = request_filters
+
+    if logistic_mode in (2,3,5) or version >= STABLE_1_1_19_0:
+        # In v1.0.0 every logistic chest which can have logistic-filters
+        # or -requests has the flag "request from buffers". But the UI
+        # shows this flag only for requester chests.
+        # In v1.0.0 the existence of the flag correlates with the number
+        # of filters because a fixed number of slots were always allocated
+        # for a specific type of chest.
+        # Since 1.1.19 the number of filter slots can be extended (and
+        # possibly shrunk), so this may not be a stable criteria any more.
+        # So it's nice that the flag is always present since v1.1.19.
         request_from_buffers = stream.bool()
         if request_from_buffers:
             entity["request_from_buffers"] = True
-
-    if request_filters:
-        entity["request_filters"] = request_filters
 
     stream.expect(0x00, 0x00)
 
