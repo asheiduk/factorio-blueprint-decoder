@@ -1967,7 +1967,7 @@ def parse_entities(stream, index, result):
         # debug output
         debug(f"    [{len(entities)}] @{file_position:#x} - "
             f"x: {position['x']}, y: {position['y']}, "
-            f"'{entry.prototype}/{entry.name}'")
+            f"'{entry.prototype}/{entry.name}' ({entry.id:#06x})")
 
         # attach entity
         entity = {
