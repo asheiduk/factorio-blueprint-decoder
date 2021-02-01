@@ -902,7 +902,23 @@ def eh_inserter(stream, index, entity):
 def eh_electric_pole(stream, index, entity):
     ep_entity_id(stream, index, entity)
 
-    stream.expect(*[0x00]*4)
+    if version >= STABLE_1_1_19_0:
+        # Strange: first and only zero-terminated list.
+        # Even stranger: first and only  occurence of an implicitly
+        # terminated list!
+        # Fun fact: poles cannot have more than 5 wired in the game (at least
+        # pole to pole. Check pole-to-switch!)
+        neighbours = []
+        next_neighbour = stream.u32()
+        while next_neighbour:
+            neighbours.append(next_neighbour)
+            if len(neighbours) >= 5:
+                break
+            next_neighbour = stream.u32()
+        if neighbours:
+           entity["neighbours"] = neighbours
+    else:
+        stream.expect(*[0x00]*4)
 
     # circuit network connections
     has_circuit_connections = stream.bool()
@@ -2180,12 +2196,12 @@ def fixup_entity_ids(blueprint):
                         # TODO: check for circuit "1"
                         del it["circuit_id"]
             # handle train schedules
-            elif "locomotives" in it:
-                debug("# update schedule")
+            if "locomotives" in it:
                 it["locomotives"] = [ id_to_entity[l]["entity_number"] for l in it["locomotives"]]
-            else:
-                for value in it.values():
-                    walk(value)
+            if "neighbours" in it:
+                it["neighbours"] = [ id_to_entity[n]["entity_number"] for n in it["neighbours"]]
+            for value in it.values():
+                walk(value)
 
         elif isinstance(it, list):
             for value in it:
