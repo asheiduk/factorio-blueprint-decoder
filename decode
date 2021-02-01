@@ -600,6 +600,11 @@ def eh_logistic_container(stream, index, entity):
     stream.expect(0x00)
     stream.expect(0x01)
 
+    # 1: active provider
+    # 2: storage
+    # 3: requester
+    # 4: passive provider
+    # 5: buffer
     logistic_mode = stream.u8()  # not used in export
     if not 0 <= logistic_mode <= 5:
         raise ParseError(f"unknown logistic mode {logistic_mode}")
