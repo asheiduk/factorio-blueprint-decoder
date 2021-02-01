@@ -352,6 +352,10 @@ def read_signal(stream, index: Index):
 
 
 # circuit condition, logistic condition, train schedules
+#
+#   length: 12 byte
+#   default: 01 00 00 00 00 00 00 00 00 00 00 01
+#
 def read_condition(stream, index: Index):
     # same order in drop-down
     comparator = stream.mapped_u8(">", "<", "=", "≥", "≤", "≠")
