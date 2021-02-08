@@ -78,6 +78,13 @@ class Index:
         "repair-tool": ITEM,
         "tool": ITEM,
         "upgrade-item": ITEM,
+        # item without known ways to put them into blueprints
+        "copy-paste-tool": ITEM,
+        "item-with-label": ITEM,
+        "item-with-inventory": ITEM,
+        "item-with-tags": ITEM,
+        "mining-tool": ITEM,
+        "selection-tool": ITEM,
         # fluid
         "fluid": FLUID,
         # virtual-signal
