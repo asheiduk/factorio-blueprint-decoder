@@ -7,6 +7,23 @@ import json
 import time
 from enum import Enum
 
+################################################################
+#
+# versions
+
+def encode_version(v0: int, v1: int, v2: int, v3: int = 0):
+    return (v0 << 48) + (v1 << 32) + (v2 << 16) + v3
+
+def decode_version(version: int):
+    def _(bits):
+        return version >> bits & 0xffff
+    return ( _(48), _(32), _(16), _(0) )
+
+STABLE_1_0_0_0 = encode_version(1,0,0)
+STABLE_1_1_19_0 = encode_version(1,1,19)
+
+
+version = None  # global state is not nice but that's how it is for now.
 
 ################################################################
 #
@@ -1819,7 +1836,7 @@ def parse_version(stream, result):
         stream.u16(),
     )
     debug(f"version: {'.'.join(map(str, version))}")
-    result["version"] = (version[0] << 48) + (version[1] << 32) + (version[2] << 16) + version[3]
+    result["version"] = encode_version(*version)
     if opt.x:
         result["_version_"] = version
 
@@ -2194,6 +2211,9 @@ def parse_blueprint_library(stream: PrimitiveStream):
 
     parse_version(stream, book_item)
     library_version = book_item["version"]
+
+    global version
+    version = library_version
 
     stream.expect(0x00)
 
