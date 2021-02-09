@@ -1343,7 +1343,13 @@ def eh_constant_combinator(stream, index, entity):
 def eh_power_switch(stream, index, entity):
     ep_entity_id(stream, index, entity)
 
-    stream.expect(*[0x00]*13)
+    if version >= STABLE_1_1_19_0:
+        switch_state = stream.bool()
+        entity["switch_state"] = switch_state
+    else:
+        stream.expect(0x00)
+
+    stream.expect(*[0x00]*12)
 
     connections = {}
 
