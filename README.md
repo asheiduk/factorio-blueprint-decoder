@@ -28,9 +28,11 @@ parts of a save file.
 
 ## Supported versions & mods
 
-Currently only version 1.0.0 is supported.
+Usually only stable versions of the game are supported. Currently these are:
 
-All vanilla stuff should work but using mods might turn up yet unknown fields.
+ - **1.0.0**: All vanilla stuff should work but using mods might turn up yet unknown fields.
+
+ - **1.1.19**: Same as above but new entities like linked chests and linked belt are "Work In Progress".
 
 Blueprints containing stuff from removed mods are currently also not supported.
 
