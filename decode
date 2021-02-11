@@ -125,6 +125,7 @@ class Index:
         "lamp": ENTITY,
         "land-mine": ENTITY,
         "loader": ENTITY,
+        "loader-1x1": ENTITY,
         "locomotive": ENTITY,
         "logistic-container": ENTITY,
         "mining-drill": ENTITY,
@@ -1683,6 +1684,10 @@ def eh_loader(stream, index, entity):
     stream.expect(*[0x00]*5)
 
 
+def eh_loader_1x1(stream, index, entity):
+    eh_loader(stream, index, entity)
+
+
 def eh_electric_energy_interface(stream, index, entity):
     stream.expect(0x00)
 
@@ -1795,6 +1800,7 @@ entity_handlers = {
     "rocket-silo": eh_rocket_silo,
     # Infinity / Cheat Mode
     "loader": eh_loader,
+    "loader-1x1": eh_loader_1x1,
     "electric-energy-interface": eh_electric_energy_interface,
     "infinity-pipe": eh_infinity_pipe,
     "heat-interface": eh_heat_interface,
