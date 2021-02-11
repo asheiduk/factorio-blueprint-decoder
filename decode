@@ -2359,6 +2359,8 @@ def parse_blueprint(stream: PrimitiveStream, index, library_version):
     content_start = stream.tell()
 
     if has_removed_mods:
+        global version
+
         verbose(f"    blueprint contains stuff from removed mods!")
 
         # Actually the local index is located AFTER the blueprint data.
@@ -2368,7 +2370,11 @@ def parse_blueprint(stream: PrimitiveStream, index, library_version):
         # read local index
         index_size = stream.count()
         index_start = stream.tell()
+
         parse_version(stream, result)
+        index_version = result["version"]
+        version = index_version
+
         stream.expect(0x00)
         index = parse_index(stream, result)
 
@@ -2383,6 +2389,11 @@ def parse_blueprint(stream: PrimitiveStream, index, library_version):
         stream.seek(content_start, 0)
 
     parse_version(stream, result)
+    blueprint_version = result["version"]
+    version = blueprint_version
+    # Note: The index version and the blueprint version CAN be different!
+    # Encountered an index with version 1.0.0.0 and a blueprint with 0.18.29.0
+    # inside a library of version 1.1.15.0
 
     stream.expect(0x00)
 
@@ -2415,6 +2426,9 @@ def parse_blueprint(stream: PrimitiveStream, index, library_version):
         # skp because already read
         index_size = stream.count()
         stream.seek(index_size, 1)
+
+        # reset version (if changed)
+        version = library_version
 
     return result
 
