@@ -5,6 +5,7 @@ import sys
 import struct
 import json
 import time
+import traceback
 from enum import Enum
 
 ################################################################
@@ -25,6 +26,8 @@ STABLE_1_1_19_0 = encode_version(1,1,19)
 
 version = None  # global state is not nice but that's how it is for now.
 
+skipped_blueprints = 0
+
 ################################################################
 #
 # utilities
@@ -36,6 +39,9 @@ def debug(*args):
 def verbose(*args):
     if opt.v or opt.d:
         print(*args, file=sys.stderr, flush=True)
+
+def error(*args):
+    print(*args, file=sys.stderr, flush=True)
 
 
 def normalize_float(value):
@@ -2000,13 +2006,14 @@ def parse_library_objects(stream, index, result, library_version):
                 raise ParseError(f"no handler for {entry.prototype}/{entry.name} ({entry.id:#x})")
 
             handler_result = handler(stream, index, library_version)
-            if opt.x:
-                handler_result["_generation_"] = generation
-            objects.append({
-                # Strange: This index is zero-based, not one-based.
-                "index": o,
-                prefix["key"]: handler_result
-            })
+            if handler_result:
+                if opt.x:
+                    handler_result["_generation_"] = generation
+                objects.append({
+                    # Strange: This index is zero-based, not one-based.
+                    "index": o,
+                    prefix["key"]: handler_result
+                })
         else:
             verbose(f"\n[{o}] library slot: free")
 
@@ -2358,62 +2365,80 @@ def parse_blueprint(stream: PrimitiveStream, index, library_version):
     content_size = stream.count()
     content_start = stream.tell()
 
-    if has_removed_mods:
-        global version
+    global version
+    try:
 
-        verbose(f"    blueprint contains stuff from removed mods!")
+        if has_removed_mods:
+            verbose(f"    blueprint contains stuff from removed mods!")
 
-        # Actually the local index is located AFTER the blueprint data.
-        # So seek there. Bye bye streaming access :-[
-        stream.seek(content_size, 1)
+            # Actually the local index is located AFTER the blueprint data.
+            # So seek there. Bye bye streaming access :-[
+            stream.seek(content_size, 1)
 
-        # read local index
-        index_size = stream.count()
-        index_start = stream.tell()
+            # read local index
+            index_size = stream.count()
+            index_start = stream.tell()
+
+            parse_version(stream, result)
+            index_version = result["version"]
+            version = index_version
+
+            stream.expect(0x00)
+            index = parse_index(stream, result)
+
+            # check position
+            index_end = stream.tell()
+            parsed_size = index_end - index_start
+            if parsed_size != index_size:
+                raise AssertionError(f"mismatch between declared local index size ({index_size})"
+                    f" and parsed index size ({parsed_size})")
+
+            # seek back
+            stream.seek(content_start, 0)
 
         parse_version(stream, result)
-        index_version = result["version"]
-        version = index_version
+        blueprint_version = result["version"]
+        version = blueprint_version
+        # Note: The index version and the blueprint version CAN be different!
+        # Encountered an index with version 1.0.0.0 and a blueprint with 0.18.29.0
+        # inside a library of version 1.1.15.0
 
         stream.expect(0x00)
-        index = parse_index(stream, result)
 
-        # check position
-        index_end = stream.tell()
-        parsed_size = index_end - index_start
-        if parsed_size != index_size:
-            raise AssertionError(f"mismatch between declared local index size ({index_size})"
-                f" and parsed index size ({parsed_size})")
+        parse_migrations(stream, result)
 
-        # seek back
-        stream.seek(content_start, 0)
+        description = stream.string()
+        if description:
+            result["description"] = description
 
-    parse_version(stream, result)
-    blueprint_version = result["version"]
-    version = blueprint_version
-    # Note: The index version and the blueprint version CAN be different!
-    # Encountered an index with version 1.0.0.0 and a blueprint with 0.18.29.0
-    # inside a library of version 1.1.15.0
+        parse_snap_to_grid(stream, result)
 
-    stream.expect(0x00)
+        parse_entities(stream, index, result)
 
-    parse_migrations(stream, result)
+        parse_schedules(stream, index, result)
 
-    description = stream.string()
-    if description:
-        result["description"] = description
+        parse_tiles(stream, index, result)
 
-    parse_snap_to_grid(stream, result)
+        parse_icons(stream, index, result)
 
-    parse_entities(stream, index, result)
+        fixup_entity_ids(result)
 
-    parse_schedules(stream, index, result)
+    except Exception as e:
+        if not opt.skip:
+            raise
 
-    parse_tiles(stream, index, result)
+        error(f"ERROR: skipping blueprint '{label}' due to exception: {e}")
+        traceback.print_exc()
 
-    parse_icons(stream, index, result)
+        stream.seek(content_start + content_size, 0)
 
-    fixup_entity_ids(result)
+        global skipped_blueprints
+        skipped_blueprints += 1
+
+        result = None
+
+    finally:
+        version = library_version
 
     content_end = stream.tell()
     parsed_size = content_end - content_start
@@ -2426,9 +2451,6 @@ def parse_blueprint(stream: PrimitiveStream, index, library_version):
         # skp because already read
         index_size = stream.count()
         stream.seek(index_size, 1)
-
-        # reset version (if changed)
-        version = library_version
 
     return result
 
@@ -2609,6 +2631,8 @@ object_handlers = {
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("-s", "--skip-bad", action="store_true", dest="skip",
+        help="skip unparsable blueprints and exit with '2'"),
     parser.add_argument("-v", "--verbose", action="store_true", dest="v",
         help="verbose output on STDERR")
     parser.add_argument("-d", "--debug", action="store_true", dest="d",
@@ -2623,3 +2647,7 @@ if __name__ == "__main__":
     with open(opt.filename, "rb") as f:
         library = parse_blueprint_library(PrimitiveStream(f))
         json.dump(library, sys.stdout, indent=4, sort_keys=True, ensure_ascii=False)
+
+    if skipped_blueprints:
+        error(f"ERROR - summary: skipped {skipped_blueprints} unreadable blueprints.")
+        exit(2)
