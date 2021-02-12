@@ -2420,4 +2420,4 @@ if __name__ == "__main__":
     verbose(f"file: {opt.filename}")
     with open(opt.filename, "rb") as f:
         library = parse_blueprint_library(PrimitiveStream(f))
-        print(json.dumps(library, indent=4, sort_keys=True, ensure_ascii=False))
+        json.dump(library, sys.stdout, indent=4, sort_keys=True, ensure_ascii=False)
