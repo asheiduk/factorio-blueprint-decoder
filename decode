@@ -1156,7 +1156,11 @@ def eh_cargo_wagon(stream, index, entity):
 
     ep_railway_vehicle_common(stream, index, entity)
 
-    stream.expect(*[0x00]*6)
+    # Wagon colors cannot be set in the UI. Mods can.
+    # But other wagons (fluid, artillery) don't support them.
+    ep_color(stream, index, entity)
+
+    stream.expect(*[0x00]*5)
 
     inventory = entity.setdefault("inventory", {})
 
