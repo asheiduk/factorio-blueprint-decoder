@@ -294,12 +294,18 @@ class PrimitiveStream:
         else:
             debug(f"#\tignored @{file_position:#x}: {data}")
 
-    def dump_trailing_data(self):
+    def dump_trailing_data(self, offsets=True, printables=True):
         position, data = self._f.tell(), self._f.read(16)
         if data:
             debug("trailing data:")
             while data:
-                debug(f"{position:06x}", self._to_hex(data), self._to_print(data))
+                parts = []
+                if offsets:
+                    parts.append(f"{position:06x}")
+                parts.append(self._to_hex(data))
+                if printables:
+                    parts.append(self._to_print(data))
+                debug(*parts)
                 position, data = self._f.tell(), self._f.read(16)
 
     @staticmethod
