@@ -2027,12 +2027,22 @@ def parse_schedules(stream, index, result):
             locomotives.append(locomotive_id)
 
         station_count = stream.count8()
+
         for st in range(station_count):
+            station_position = stream.tell()
+            station_name = stream.string()
             station = {
-                "station": stream.string(),
-                "wait_conditions": [],
+                "station": station_name,
             }
 
+            # Strange 1: Only case where something else than a flag enables additional data.
+            # Strange 2: The "temporary" flag down below would fit but can't be used for parsing (to late)
+            if not station_name:
+                # There seems to be no way to resolve this to anything recognizable.
+                # Doesn't matter much because the export string also contains nothing.
+                stream.ignore(4, "temp. destination")
+
+            wait_conditions = []
             wait_condition_count = stream.u32()
             for wc in range(wait_condition_count):
                 wait_condition = {}
@@ -2065,9 +2075,15 @@ def parse_schedules(stream, index, result):
                 if condition:
                     wait_condition["condition"] = condition
 
-                station["wait_conditions"].append(wait_condition)
+                wait_conditions.append(wait_condition)
 
-            stream.expect(0x00)
+            if wait_conditions:
+                station["wait_conditions"] = wait_conditions
+
+            # Strange: A rare redundancy between this flag and empty statiion name (see above).
+            temporary = stream.bool()
+            if temporary:
+                station["temporary"] = True
 
             schedule["schedule"].append(station)
 
