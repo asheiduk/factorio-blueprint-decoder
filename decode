@@ -210,7 +210,8 @@ class PrimitiveStream:
     def bool(self):
         data = self.u8()
         if data != 0x00 and data != 0x01:
-            raise ParseError(f"invalid boolean value {data:#04x} at position {self.tell()-1:#06x}")
+            position = self.tell() - 1
+            raise ParseError(f"invalid boolean value {data:#04x} at position {position} ({position:#x})")
         return data == 0x01
 
     def s8(self):
@@ -251,8 +252,8 @@ class PrimitiveStream:
     def count8(self):
         data = self.u8()
         if data == 0xff:
-            file_position = self.tell()
-            raise ParseError("unexpected flexible length 0xff @{file_position:#x}")
+            position = self.tell()
+            raise ParseError("unexpected flexible length 0xff at {position} ({position:#x})")
         return data
 
     def count16(self):
@@ -271,7 +272,7 @@ class PrimitiveStream:
             return args[index]
         else:
             position = self.tell() - 1
-            raise ParseError(f"unexpected value {index} at position {position}: only 0..{len(args)-1} expected")
+            raise ParseError(f"unexpected value {index} at position {position} ({position:#x}): only 0..{len(args)-1} expected")
 
     def expect(self, *expected_bytes):
         if not expected_bytes:
@@ -326,8 +327,8 @@ def read_entry(stream, index: Index, type: Index.Type) -> Index.Entry:
         try:
             return index.get(type, id)
         except KeyError:
-            position = stream.tell() - offset
-            raise ParseError(f"unknown '{type.value}' ID {id:#x} at {position:#x}") from None
+            file_position = stream.tell() - offset
+            raise ParseError(f"unknown '{type.value}' ID {id:#x} at {file_position} ({file_position:#x})") from None
     else:
         return None
 
@@ -390,7 +391,8 @@ def ep_entity_id(stream, index, entity):
     flags = stream.u8()
     # 0x10	-- has entity id (default=0)
     if flags | 0x10 != 0x10:
-        raise ParseError(f"unexpected flags {flags:#04x} at position {stream.tell()-1:#x}")
+        file_position = stream.tell() - 1
+        raise ParseError(f"unexpected flags {flags:#04x} at {file_position} ({file_position:#x})")
 
     if flags & 0x10:
         stream.expect(0x01)
@@ -799,7 +801,8 @@ def eh_inserter(stream, index, entity):
     # others: TODO - unknown - default=0(?)
     flags = stream.u8()
     if flags | 0x03 != 0x07:
-        raise ParseError(f"unexpected flag {flags:#04x} at position {stream.tell()-1:#x}")
+        file_position = stream.tell() - 1
+        raise ParseError(f"unexpected flag {flags:#04x} at {file_position} ({file_position:#x})")
 
     # direction
     ep_direction(stream, index, entity)
@@ -1888,7 +1891,8 @@ def parse_library_objects(stream, index, result, library_version):
 
             entry = read_entry(stream, index, Index.ITEM)
             if not entry:
-                raise ParseError(f"found item ID 0x0000 at {stream.tell()-2:#x} where a real ID is required.")
+                file_position = stream.tell() - 2
+                raise ParseError(f"found item ID 0x0000 at {file_position} ({file_position:#x}) where a real ID is required.")
 
             if entry.prototype != prefix["prototype"]:
                 raise ParseError(
