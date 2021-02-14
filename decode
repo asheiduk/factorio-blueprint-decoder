@@ -1498,7 +1498,18 @@ def eh_offshore_pump(stream, index, entity):
 
 
 def eh_furnace(stream, index, entity):
-    stream.expect(*[0x00]*6)
+
+    stream.expect(*[0x00]*3)
+
+    # direction
+    # Importing a patched blueprint string works - the "direction" field
+    # from JSON is stored here. But re-exporting the blueprint does not
+    # write it to JSON. Therefore it is ignored here to:
+    # ep_direction(stream, index, entity)
+    direction = stream.u8();
+
+    stream.expect(*[0x00]*2)
+
     # modules
     ep_items(stream, index, entity)
     # Strange: only one trailing zero-byte instead of 5!
