@@ -28,9 +28,11 @@ parts of a save file.
 
 ## Supported versions & mods
 
-Currently only version 1.0.0 is supported.
+Usually only stable versions of the game are supported. Currently these are:
 
-All vanilla stuff should work but using mods might turn up yet unknown fields.
+ - **1.0.0**: All vanilla stuff should work but using mods might turn up yet unknown fields.
+
+ - **1.1.19**: Same as above but new entities like linked chests and linked belt are "Work In Progress".
 
 Blueprints containing stuff from removed mods are currently also not supported.
 
@@ -42,7 +44,7 @@ The script requires [Python] 3.6 (or higher) installed.
 
 `decode` converts a `*.dat` file into JSON:
 
-	./decode examples/bps-pipes.dat > /tmp/bps-pipes.json
+	./decode tests/v1.0.0/bps-pipes.dat > /tmp/bps-pipes.json
 
 `encode-export-string` converts JSON into a packed import/export string:
 

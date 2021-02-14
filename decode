@@ -7,6 +7,23 @@ import json
 import time
 from enum import Enum
 
+################################################################
+#
+# versions
+
+def encode_version(v0: int, v1: int, v2: int, v3: int = 0):
+    return (v0 << 48) + (v1 << 32) + (v2 << 16) + v3
+
+def decode_version(version: int):
+    def _(bits):
+        return version >> bits & 0xffff
+    return ( _(48), _(32), _(16), _(0) )
+
+STABLE_1_0_0_0 = encode_version(1,0,0)
+STABLE_1_1_19_0 = encode_version(1,1,19)
+
+
+version = None  # global state is not nice but that's how it is for now.
 
 ################################################################
 #
@@ -514,6 +531,7 @@ def ep_railway_vehicle_common(stream, index, entity):
     # 26 22 4f
     # e7 73 ed
     # ac d3 65
+    # Seems to be stuck at (0,0,0) since v.1.1.19 or v1.1.21.
     stream.ignore(3, "train-id(?)")
 
     stream.expect(0x00, 0x00)
@@ -632,15 +650,22 @@ def eh_logistic_container(stream, index, entity):
                 "name": item_name,
                 "count": item_count
             })
-    if filter_count > 0:
-        # Strange: First occurance of the pattern that the list size affects
-        # the presence/absence of data after the list.
+    if request_filters:
+        entity["request_filters"] = request_filters
+
+    if logistic_mode in (2,3,5) or version >= STABLE_1_1_19_0:
+        # In v1.0.0 every logistic chest which can have logistic-filters
+        # or -requests has the flag "request from buffers". But the UI
+        # shows this flag only for requester chests.
+        # In v1.0.0 the existence of the flag correlates with the number
+        # of filters because a fixed number of slots were always allocated
+        # for a specific type of chest.
+        # Since 1.1.19 the number of filter slots can be extended (and
+        # possibly shrunk), so this may not be a stable criteria any more.
+        # So it's nice that the flag is always present since v1.1.19.
         request_from_buffers = stream.bool()
         if request_from_buffers:
             entity["request_from_buffers"] = True
-
-    if request_filters:
-        entity["request_filters"] = request_filters
 
     stream.expect(0x00, 0x00)
 
@@ -885,7 +910,23 @@ def eh_inserter(stream, index, entity):
 def eh_electric_pole(stream, index, entity):
     ep_entity_id(stream, index, entity)
 
-    stream.expect(*[0x00]*4)
+    if version >= STABLE_1_1_19_0:
+        # Strange: first and only zero-terminated list.
+        # Even stranger: first and only  occurence of an implicitly
+        # terminated list!
+        # Fun fact: poles cannot have more than 5 wired in the game (at least
+        # pole to pole. Check pole-to-switch!)
+        neighbours = []
+        next_neighbour = stream.u32()
+        while next_neighbour:
+            neighbours.append(next_neighbour)
+            if len(neighbours) >= 5:
+                break
+            next_neighbour = stream.u32()
+        if neighbours:
+           entity["neighbours"] = neighbours
+    else:
+        stream.expect(*[0x00]*4)
 
     # circuit network connections
     has_circuit_connections = stream.bool()
@@ -955,6 +996,7 @@ def eh_train_stop(stream, index, entity):
 
     ep_direction(stream, index, entity)
 
+    set_trains_limit = False
     has_circuit_connections = stream.bool()
     if has_circuit_connections:
         # connections
@@ -984,6 +1026,7 @@ def eh_train_stop(stream, index, entity):
         # Why two flags (read_stopped_train and train_stopped_flag)?
         if read_stopped_train:
             control_behavior["read_stopped_train"] = True
+        # since v1.1.19 this flag seems to be stuck at 0x01
         train_stopped_flag = stream.bool()
         train_stopped_signal = read_signal(stream, index)
         if train_stopped_flag:
@@ -991,7 +1034,29 @@ def eh_train_stop(stream, index, entity):
 
         stream.expect(*[0x00]*4)
 
+        if version >= STABLE_1_1_19_0:
+            read_trains_count = stream.bool()
+            trains_count_signal = read_signal(stream, index)
+            if read_trains_count:
+                control_behavior["read_trains_count"] = read_trains_count
+                control_behavior["trains_count_signal"] = trains_count_signal
+
+            set_trains_limit = stream.bool()
+            trains_limit_signal = read_signal(stream, index)
+            if set_trains_limit:
+                control_behavior["set_trains_limit"] = set_trains_limit
+                control_behavior["trains_limit_signal"] = trains_limit_signal
+
     ep_color(stream, index, entity)
+
+    if version >= STABLE_1_1_19_0:
+        # -1: unset, so 0 is a valid value
+        manual_trains_limit = stream.s32()
+        # strange: First time information (set_trains_limit) of an optional
+        #   block is needed outside that block. And just for filtering a value!
+        if manual_trains_limit >= 0 and not set_trains_limit:
+            entity["manual_trains_limit"] = manual_trains_limit
+        stream.expect(0x00)
 
     stream.expect(*[0x00]*5)
 
@@ -1033,6 +1098,10 @@ def eh_rail_signal(stream, index, entity):
 def eh_rail_chain_signal(stream, index, entity):
     ep_entity_id(stream, index, entity)
     ep_direction(stream, index, entity)
+
+    if version >= STABLE_1_1_19_0:
+        # strange: a new flag for nothing visible?
+        stream.expect(0x01)
 
     has_circuit_connections = stream.bool()
     if has_circuit_connections:
@@ -1310,7 +1379,13 @@ def eh_constant_combinator(stream, index, entity):
 def eh_power_switch(stream, index, entity):
     ep_entity_id(stream, index, entity)
 
-    stream.expect(*[0x00]*13)
+    if version >= STABLE_1_1_19_0:
+        switch_state = stream.bool()
+        entity["switch_state"] = switch_state
+    else:
+        stream.expect(0x00)
+
+    stream.expect(*[0x00]*12)
 
     connections = {}
 
@@ -1819,7 +1894,7 @@ def parse_version(stream, result):
         stream.u16(),
     )
     debug(f"version: {'.'.join(map(str, version))}")
-    result["version"] = (version[0] << 48) + (version[1] << 32) + (version[2] << 16) + version[3]
+    result["version"] = encode_version(*version)
     if opt.x:
         result["_version_"] = version
 
@@ -1952,16 +2027,22 @@ def parse_icons(stream, index, result):
 def parse_snap_to_grid(stream, result):
     snap_to_grid = stream.bool()
     if snap_to_grid:
-        x = stream.u32()
-        y = stream.u32()
         result["snap-to-grid"] = {
-            "x": x,
-            "y": y
+            "x": stream.u32(),
+            "y": stream.u32()
         }
 
         absolute_snapping = stream.bool()
         if absolute_snapping:
             result["absolute-snapping"] = absolute_snapping
+            if version >= STABLE_1_1_19_0:
+                relative = {
+                    "x": stream.s32(),
+                    "y": stream.s32()
+                }
+                if relative != {"x": 0, "y": 0}:
+                    result["position-relative-to-grid"] = relative
+
 
 def parse_entities(stream, index, result):
     entities = result["entities"] = []
@@ -2163,12 +2244,12 @@ def fixup_entity_ids(blueprint):
                         # TODO: check for circuit "1"
                         del it["circuit_id"]
             # handle train schedules
-            elif "locomotives" in it:
-                debug("# update schedule")
+            if "locomotives" in it:
                 it["locomotives"] = [ id_to_entity[l]["entity_number"] for l in it["locomotives"]]
-            else:
-                for value in it.values():
-                    walk(value)
+            if "neighbours" in it:
+                it["neighbours"] = [ id_to_entity[n]["entity_number"] for n in it["neighbours"]]
+            for value in it.values():
+                walk(value)
 
         elif isinstance(it, list):
             for value in it:
@@ -2194,6 +2275,9 @@ def parse_blueprint_library(stream: PrimitiveStream):
 
     parse_version(stream, book_item)
     library_version = book_item["version"]
+
+    global version
+    version = library_version
 
     stream.expect(0x00)
 
