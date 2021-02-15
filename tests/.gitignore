@@ -3,4 +3,4 @@
 *.json
 *.diff
 *.extr
-/diff-report.txt
+diff-report.txt

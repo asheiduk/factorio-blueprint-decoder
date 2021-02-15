@@ -34,6 +34,8 @@ Usually only stable versions of the game are supported. Currently these are:
 
  - **1.1.19**: Same as above but new entities like linked chests and linked belt are "Work In Progress".
 
+ - **1.1.21**: The file format is the same as 1.1.19.
+
 Blueprints containing stuff from removed mods are currently also not supported.
 
 ## Usage
@@ -42,18 +44,25 @@ Basic Unix/Linux commandline knowledge is assumed :-)
 
 The script requires [Python] 3.6 (or higher) installed.
 
-`decode` converts a `*.dat` file into JSON:
+A short tour through the workflow:
 
-	./decode tests/v1.0.0/bps-pipes.dat > /tmp/bps-pipes.json
+ - `decode` converts a `*.dat` file into plain JSON:
 
-`encode-export-string` converts JSON into a packed import/export string:
+		./decode tests/v1.0.0/bps-pipes.dat > /tmp/bps-pipes.json
 
-	./encode-export-string < /tmp/bps-pipes.json > /tmp/bps-pipes.export
+ - `encode-export-string` converts JSON into a packed import/export string:
 
-That import/export string can be read back into Factorio using the command
+		./encode-export-string < /tmp/bps-pipes.json > /tmp/bps-pipes.export
+
+ - That import/export string can be read back into Factorio using the command
 "import string". The easiest way is to write the string into the clipboard
 and paste it into the dialog:
 
-	xclip -selection clipboard < /tmp/bps-pipes.export
+		xclip -i -selection clipboard < /tmp/bps-pipes.export
+
+`decode` can skip unparsable blueprints with the `-s` (or `--skip-bad`) option. Together with
+the additional output of the `-v` (or `--verbose`) or `-d` (`--debug`) options this help to
+weed out bad blueprints.
+
 
 [Python]: https://www.python.org/

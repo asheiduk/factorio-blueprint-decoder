@@ -5,6 +5,7 @@ import sys
 import struct
 import json
 import time
+import traceback
 from enum import Enum
 
 ################################################################
@@ -25,6 +26,8 @@ STABLE_1_1_19_0 = encode_version(1,1,19)
 
 version = None  # global state is not nice but that's how it is for now.
 
+skipped_blueprints = 0
+
 ################################################################
 #
 # utilities
@@ -36,6 +39,9 @@ def debug(*args):
 def verbose(*args):
     if opt.v or opt.d:
         print(*args, file=sys.stderr, flush=True)
+
+def error(*args):
+    print(*args, file=sys.stderr, flush=True)
 
 
 def normalize_float(value):
@@ -173,6 +179,8 @@ class Index:
         "tile": TILE,
         # recipe
         "recipe": RECIPE,
+        # special
+        "flying-text": ENTITY,  # no handler (yet), used for "unknown-entity" in upgrade- and deconstruction plans
     }
 
     class Entry:
@@ -224,6 +232,9 @@ class PrimitiveStream:
 
     def tell(self):
         return self._f.tell()
+
+    def seek(self, offset, whence):
+        return self._f.seek(offset, whence)
 
     def bool(self):
         data = self.u8()
@@ -1151,7 +1162,11 @@ def eh_cargo_wagon(stream, index, entity):
 
     ep_railway_vehicle_common(stream, index, entity)
 
-    stream.expect(*[0x00]*6)
+    # Wagon colors cannot be set in the UI. Mods can.
+    # But other wagons (fluid, artillery) don't support them.
+    ep_color(stream, index, entity)
+
+    stream.expect(*[0x00]*5)
 
     inventory = entity.setdefault("inventory", {})
 
@@ -1991,13 +2006,14 @@ def parse_library_objects(stream, index, result, library_version):
                 raise ParseError(f"no handler for {entry.prototype}/{entry.name} ({entry.id:#x})")
 
             handler_result = handler(stream, index, library_version)
-            if opt.x:
-                handler_result["_generation_"] = generation
-            objects.append({
-                # Strange: This index is zero-based, not one-based.
-                "index": o,
-                prefix["key"]: handler_result
-            })
+            if handler_result:
+                if opt.x:
+                    handler_result["_generation_"] = generation
+                objects.append({
+                    # Strange: This index is zero-based, not one-based.
+                    "index": o,
+                    prefix["key"]: handler_result
+                })
         else:
             verbose(f"\n[{o}] library slot: free")
 
@@ -2005,6 +2021,12 @@ def parse_library_objects(stream, index, result, library_version):
 
 
 def parse_icons(stream, index, result):
+    unknown_icons = []
+    unknown_icons_count = stream.u8()
+    for u in range(unknown_icons_count):
+        name = stream.string()
+        unknown_icons.append(name)
+
     icons = []
     icon_count = stream.count8()
     if not icon_count:
@@ -2013,6 +2035,8 @@ def parse_icons(stream, index, result):
     for i in range(icon_count):
         icon = read_signal(stream, index)
         if icon:
+            if unknown_icons[i:i+1]:
+                icon["name"] = unknown_icons[i]
             debug(f"    [{i}] '{icon['type']}' / '{icon['name']}'")
             icons.append({
                 "index": i + 1,
@@ -2285,7 +2309,11 @@ def parse_blueprint_library(stream: PrimitiveStream):
 
     global_index = parse_index(stream, result)
 
-    stream.expect(0x00, 0x00)
+    # unknown strange thing: mostly 0x00 but sometimes 0x03 and in one case
+    # even 0x0e! So more probably a counter than some flags.
+    stream.ignore(1, "library state(?)")
+
+    stream.expect(0x00)
 
     # Adding a blueprint to the library increments the counter, deleting and moving does not.
     # When a new blueprint is added to the library this global counter is copied to the new
@@ -2328,46 +2356,101 @@ def parse_blueprint(stream: PrimitiveStream, index, library_version):
         result["label"] = label
     verbose(f"blueprint '{label}' (@{file_position:#x})")
 
-    stream.expect(0x00, 0x00)
+    stream.expect(0x00)
 
-    # might be "flexible size" marker for $content_size. But since the
-    # "migrations" section for 1.0.0.0 is already 347 bytes there is no
-    # way to check that.
-    stream.expect(0xff)
+    has_removed_mods = stream.bool()
+
     # Interesting: A rare redundancy. Could be used to fast skimming
     # the library. Reasons: a) Speed, b) unparsable content due to mods/versions.
-    content_size = stream.u32()
+    content_size = stream.count()
     content_start = stream.tell()
 
-    parse_version(stream, result)
+    global version
+    try:
 
-    stream.expect(0x00)
+        if has_removed_mods:
+            verbose(f"    blueprint contains stuff from removed mods!")
 
-    parse_migrations(stream, result)
+            # Actually the local index is located AFTER the blueprint data.
+            # So seek there. Bye bye streaming access :-[
+            stream.seek(content_size, 1)
 
-    description = stream.string()
-    if description:
-        result["description"] = description
+            # read local index
+            index_size = stream.count()
+            index_start = stream.tell()
 
-    parse_snap_to_grid(stream, result)
+            parse_version(stream, result)
+            index_version = result["version"]
+            version = index_version
 
-    parse_entities(stream, index, result)
+            stream.expect(0x00)
+            index = parse_index(stream, result)
 
-    parse_schedules(stream, index, result)
+            # check position
+            index_end = stream.tell()
+            parsed_size = index_end - index_start
+            if parsed_size != index_size:
+                raise AssertionError(f"mismatch between declared local index size ({index_size})"
+                    f" and parsed index size ({parsed_size})")
 
-    parse_tiles(stream, index, result)
+            # seek back
+            stream.seek(content_start, 0)
 
-    stream.expect(0x00)
+        parse_version(stream, result)
+        blueprint_version = result["version"]
+        version = blueprint_version
+        # Note: The index version and the blueprint version CAN be different!
+        # Encountered an index with version 1.0.0.0 and a blueprint with 0.18.29.0
+        # inside a library of version 1.1.15.0
 
-    parse_icons(stream, index, result)
+        stream.expect(0x00)
 
-    fixup_entity_ids(result)
+        parse_migrations(stream, result)
+
+        description = stream.string()
+        if description:
+            result["description"] = description
+
+        parse_snap_to_grid(stream, result)
+
+        parse_entities(stream, index, result)
+
+        parse_schedules(stream, index, result)
+
+        parse_tiles(stream, index, result)
+
+        parse_icons(stream, index, result)
+
+        fixup_entity_ids(result)
+
+    except Exception as e:
+        if not opt.skip:
+            raise
+
+        error(f"ERROR: skipping blueprint '{label}' due to exception: {e}")
+        traceback.print_exc()
+
+        stream.seek(content_start + content_size, 0)
+
+        global skipped_blueprints
+        skipped_blueprints += 1
+
+        result = None
+
+    finally:
+        version = library_version
 
     content_end = stream.tell()
     parsed_size = content_end - content_start
     if parsed_size != content_size:
         raise AssertionError(f"mismatch between declared blueprint size ({content_size})"
             f" and parsed size ({parsed_size})")
+
+    # Strange: Conditional data usually follows the flag immediately.
+    if has_removed_mods:
+        # skp because already read
+        index_size = stream.count()
+        stream.seek(index_size, 1)
 
     return result
 
@@ -2387,8 +2470,6 @@ def parse_blueprint_book(stream: PrimitiveStream, index, library_version):
     if description:
         result["description"] = description
 
-    stream.expect(0x00)
-
     parse_icons(stream, index, result)
 
     parse_library_objects(stream, index, result, library_version)
@@ -2404,16 +2485,27 @@ def parse_blueprint_book(stream: PrimitiveStream, index, library_version):
 
 
 def parse_deconstruction_item(stream: PrimitiveStream, index, library_version):
-    def read_filter(section_name, type):
+    def read_filters(section_name, type):
+        unknowns = {}
+        unknown_count = stream.count8()
+        for u in range(unknown_count):
+            filter_index = stream.u16()
+            name = stream.string()
+            unknowns[filter_index] = name
+
         filters = []
         filter_count = stream.u8()
         debug(f"{section_name.replace('_', '-')}: {filter_count}")
-        for e in range(filter_count):
+        for f in range(filter_count):
             name = read_name(stream, index, type)
             if name:
+                unknown_replacement = unknowns.get(f, None)
+                if unknown_replacement:
+                    name = unknown_replacement
+                debug(f"    [{f}]: {name}")
                 filters.append({
                     # Strange: This index is zero-based, not one-based.
-                    "index": e,
+                    "index": f,
                     "name": name
                 })
         if filters:
@@ -2435,8 +2527,6 @@ def parse_deconstruction_item(stream: PrimitiveStream, index, library_version):
     if description:
         result["settings"]["description"] = description
 
-    stream.expect(0x00)
-
     # strange: Icons in "settings" instead of top-level.
     parse_icons(stream, index, result["settings"])
 
@@ -2444,9 +2534,7 @@ def parse_deconstruction_item(stream: PrimitiveStream, index, library_version):
     if entity_filter_mode:
         result["settings"]["entity_filter_mode"] = entity_filter_mode
 
-    stream.expect(0x00)
-
-    read_filter("entity_filters", Index.ENTITY)
+    read_filters("entity_filters", Index.ENTITY)
 
     trees_and_rocks_only = stream.bool()
     if trees_and_rocks_only:
@@ -2460,9 +2548,7 @@ def parse_deconstruction_item(stream: PrimitiveStream, index, library_version):
     if tile_selection_mode:
         result["settings"]["tile_selection_mode"] = tile_selection_mode
 
-    stream.expect(0x00)
-
-    read_filter("tile_filters", Index.TILE)
+    read_filters("tile_filters", Index.TILE)
 
     return result
 
@@ -2484,17 +2570,28 @@ def parse_upgrade_item(stream: PrimitiveStream, index, library_version):
     if description:
         result["settings"]["description"] = description
 
-    stream.expect(0x00)
-
     # strange: Icons in "settings" instead of top-level.
     parse_icons(stream, index, result["settings"])
 
-    stream.expect(0x00)
+    unknowns_from = {}
+    unknowns_to = {}
+    unknown_count = stream.count8()
+    for u in range(unknown_count):
+        name = stream.string()
+        is_to = stream.bool()
+        mapper_index = stream.u16()
+        if is_to:
+            unknowns_to[mapper_index] = name
+        else:
+            unknowns_from[mapper_index] = name
 
-    def reader():
+    def reader(unknowns):
         type = stream.mapped_u8(Index.ENTITY, Index.ITEM)
         name = read_name(stream, index, type)
         if name:
+            unknown_replacement = unknowns.get(m, None)
+            if unknown_replacement:
+                name = unknown_replacement
             return {
                 "type": type.value,
                 "name": name
@@ -2506,8 +2603,8 @@ def parse_upgrade_item(stream: PrimitiveStream, index, library_version):
     mapper_count = stream.count8()
     for m in range(mapper_count):
         # see read_signal but the types are different
-        _from = reader()
-        _to = reader()
+        _from = reader(unknowns_from)
+        _to = reader(unknowns_to)
         if _from or _to:
             mappers.append({
                 # Strange: This index is zero-based, not one-based.
@@ -2534,6 +2631,8 @@ object_handlers = {
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("-s", "--skip-bad", action="store_true", dest="skip",
+        help="skip unparsable blueprints and exit with '2'"),
     parser.add_argument("-v", "--verbose", action="store_true", dest="v",
         help="verbose output on STDERR")
     parser.add_argument("-d", "--debug", action="store_true", dest="d",
@@ -2548,3 +2647,7 @@ if __name__ == "__main__":
     with open(opt.filename, "rb") as f:
         library = parse_blueprint_library(PrimitiveStream(f))
         json.dump(library, sys.stdout, indent=4, sort_keys=True, ensure_ascii=False)
+
+    if skipped_blueprints:
+        error(f"ERROR - summary: skipped {skipped_blueprints} unreadable blueprints.")
+        exit(2)
