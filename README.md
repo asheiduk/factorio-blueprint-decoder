@@ -30,13 +30,15 @@ parts of a save file.
 
 Usually only stable versions of the game are supported. Currently these are:
 
- - **1.0.0**: All vanilla stuff should work but using mods might turn up yet unknown fields.
+ - **1.0.0**: All vanilla stuff should work.
 
- - **1.1.19**: Same as above but new entities like linked chests and linked belt are "Work In Progress".
+ - **1.1.19**: All vanilla stuff should work. New entities like "linked chest" and
+	"linked belt" are "Work In Progress". These entities are not reachable in the normal
+	game though.
 
  - **1.1.21**: The file format is the same as 1.1.19.
 
-Blueprints containing stuff from removed mods are currently also not supported.
+So all vanilla stuff should work but mods can turn up yet unknown fields. Please file issues for that.
 
 ## Usage
 
