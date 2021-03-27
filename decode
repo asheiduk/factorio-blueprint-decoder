@@ -7,6 +7,7 @@ import json
 import time
 import traceback
 from enum import Enum
+import io
 
 ################################################################
 #
@@ -2630,6 +2631,16 @@ object_handlers = {
 # main
 
 if __name__ == "__main__":
+    # Pin encoding to UTF-8 because:
+    #  - The output MUST support characters like '≠' (\u2260)
+    #  - The output must conform to Factorio's export format.
+    # The user's prefered encoding might not support that.
+    # So STDOUT is required, verbose/debug output on STDERR can contain
+    # wild character. STDIN is there just to round them all up.
+    sys.stdin = io.TextIOWrapper(sys.stdin.detach(), encoding="utf-8")
+    sys.stdout = io.TextIOWrapper(sys.stdout.detach(), encoding="utf-8")
+    sys.stderr = io.TextIOWrapper(sys.stderr.detach(), encoding="utf-8")
+
     parser = argparse.ArgumentParser()
     parser.add_argument("-s", "--skip-bad", action="store_true", dest="skip",
         help="skip unparsable blueprints and exit with '2'"),
