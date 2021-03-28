@@ -540,7 +540,15 @@ def ep_logistic_condition(stream, index, entity):
             entity["control_behavior"].pop("logistic_condition", None)
 
 def ep_railway_vehicle_common(stream, index, entity):
-    stream.expect(*[0x00]*10, 0x01, *[0x00]*23)
+    stream.expect(*[0x00]*10, 0x01)
+
+    # Setable in Krastorio 2 in locomotives, cargo wagon and artillery wagon
+    # but not fluid wagon.
+    # Strange: Seems to be stored only in the .dat file but not in the export
+    # strings. This defeats a perfect round-trip!
+    enable_logistics_while_moving = stream.bool()
+
+    stream.expect(*[0x00]*22)
 
     # 26 22 4f
     # e7 73 ed
