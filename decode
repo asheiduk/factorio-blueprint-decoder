@@ -1453,12 +1453,14 @@ def eh_power_switch(stream, index, entity):
 def eh_programmable_speaker(stream, index, entity):
     ep_entity_id(stream, index, entity)
 
+    # https://lua-api.factorio.com/latest/Concepts.html#ProgrammableSpeakerParameters
     entity["parameters"] = {
         "playback_volume": normalize_float(stream.f64()),
         "playback_globally": stream.bool(),
         "allow_polyphony": stream.bool(),
     }
 
+    # https://lua-api.factorio.com/latest/Concepts.html#ProgrammableSpeakerAlertParameters
     alert_parameters = entity["alert_parameters"] = {
         "show_alert": stream.bool(),
         "show_on_map": stream.bool(),
@@ -1476,19 +1478,12 @@ def eh_programmable_speaker(stream, index, entity):
         # condition
         ep_circuit_condition(stream, index, entity)
 
-        signal_value_is_pitch = stream.bool()
-
-        instrument_id = stream.u8()
-        stream.expect(0x00, 0x00, 0x00)  # perhaps u32?
-
-        note_id = stream.u8()
-        stream.expect(0x00, 0x00, 0x00)  # perhaps u32?
-
+        # https://lua-api.factorio.com/latest/Concepts.html#ProgrammableSpeakerCircuitParameters
         control_behavior = entity.setdefault("control_behavior", {})
         control_behavior["circuit_parameters"] = {
-            "instrument_id": instrument_id,
-            "note_id": note_id,
-            "signal_value_is_pitch": signal_value_is_pitch,
+            "signal_value_is_pitch": stream.bool(),
+            "instrument_id": stream.u32(),
+            "note_id": stream.u32(),
         }
 
     stream.expect(*[0x00]*5)
