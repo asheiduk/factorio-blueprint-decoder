@@ -32,11 +32,9 @@ Usually only stable versions of the game are supported. Currently these are:
 
  - **1.0.0**: All vanilla stuff should work.
 
- - **1.1.19**: All vanilla stuff should work. New entities like "linked chest" and
-	"linked belt" are "Work In Progress". These entities are not reachable in the normal
-	game though.
+ - **1.1.19**: This is the first stable version in 1.1. All vanilla stuff should work.
 
- - **1.1.21**: The file format is the same as 1.1.19.
+ - **1.1.x**: The file format did not change up to now (1.1.33).
 
 So all vanilla stuff should work but mods can turn up yet unknown fields. Please file issues for that.
 

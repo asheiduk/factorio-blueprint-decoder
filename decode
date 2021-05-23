@@ -148,6 +148,8 @@ class Index:
         "lab": ENTITY,
         "lamp": ENTITY,
         "land-mine": ENTITY,
+        "linked-belt": ENTITY,
+        "linked-container": ENTITY,
         "loader": ENTITY,
         "loader-1x1": ENTITY,
         "locomotive": ENTITY,
@@ -1838,6 +1840,32 @@ def eh_heat_interface(stream, index, entity):
     stream.expect(*[0x00]*5)
 
 
+# since v1.1.19
+def eh_linked_belt(stream, index, entity):
+    ep_entity_id(stream, index, entity)
+
+    ep_direction(stream, index, entity)
+
+    type = stream.mapped_u8("input", "output")
+    entity["type"] = type
+
+    belt_link = stream.u32()
+    if belt_link:
+        entity["belt_link"] = belt_link
+
+    stream.expect(*[0x00]*5)
+
+
+# since v1.1.19
+def eh_linked_container(stream, index, entity):
+    stream.expect(0x00)
+
+    link_id = stream.u32()
+    entity["link_id"] = link_id
+
+    stream.expect(*[0x00]*5)
+
+
 entity_handlers = {
     # Logistics
     "container": eh_container,
@@ -1897,6 +1925,8 @@ entity_handlers = {
     "electric-energy-interface": eh_electric_energy_interface,
     "infinity-pipe": eh_infinity_pipe,
     "heat-interface": eh_heat_interface,
+    "linked-belt": eh_linked_belt,
+    "linked-container": eh_linked_container,
 }
 
 
@@ -2273,8 +2303,12 @@ def fixup_entity_ids(blueprint):
             # handle train schedules
             if "locomotives" in it:
                 it["locomotives"] = [ id_to_entity[l]["entity_number"] for l in it["locomotives"]]
+            # handle electric pole wiring
             if "neighbours" in it:
                 it["neighbours"] = [ id_to_entity[n]["entity_number"] for n in it["neighbours"]]
+            # handle linked belt connections
+            if "belt_link" in it:
+                it["belt_link"] = id_to_entity[it["belt_link"]]["entity_number"]
             for value in it.values():
                 walk(value)
 
