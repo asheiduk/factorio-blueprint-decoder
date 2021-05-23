@@ -122,6 +122,7 @@ class Index:
         "assembling-machine": ENTITY,
         "beacon": ENTITY,
         "boiler": ENTITY,
+        "burner-generator": ENTITY,
         "cargo-wagon": ENTITY,
         "cliff": ENTITY,
         "constant-combinator": ENTITY,
@@ -1869,6 +1870,13 @@ def eh_linked_container(stream, index, entity):
     stream.expect(*[0x00]*5)
 
 
+# reachable via map editor or infinity-chest
+def eh_burner_generator(stream, index, entity):
+    stream.expect(*[0x00]*13)
+    ep_direction(stream, index, entity)
+    stream.expect(*[0x00]*5)
+
+
 entity_handlers = {
     # Logistics
     "container": eh_container,
@@ -1930,6 +1938,8 @@ entity_handlers = {
     "heat-interface": eh_heat_interface,
     "linked-belt": eh_linked_belt,
     "linked-container": eh_linked_container,
+    # not reachable in normal game but e.g. in the map editor
+    "burner-generator": eh_burner_generator,
 }
 
 
