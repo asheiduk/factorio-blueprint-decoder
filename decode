@@ -1699,7 +1699,10 @@ def eh_ammo_turret(stream, index, entity):
     stream.expect(0x08) # maybe fixed "direction"
     stream.expect(*[0x00]*16)
     stream.expect(0xff, 0xff, 0xff, 0xff)
-    stream.expect(*[0x00]*9)
+    stream.expect(*[0x00]*4)
+    # Ammo -- Currently this is not setable in a vanilla game:
+    ep_items(stream, index, entity)
+    stream.expect(0x00)
 
 
 def eh_electric_turret(stream, index, entity):
@@ -1741,7 +1744,10 @@ def eh_artillery_turret(stream, index, entity):
     stream.expect(*[0x00]*8)
     stream.expect(0x01, 0x00)
     stream.expect(0x00, 0x00, 0x80, 0x3f) #1.0f
-    stream.expect(*[0x00]*23)
+    stream.expect(*[0x00]*18)
+    # Shells -- Currently this is not setable in a vanilla game:
+    ep_items(stream, index, entity)
+    stream.expect(0x00)
 
 
 def eh_radar(stream, index, entity):
