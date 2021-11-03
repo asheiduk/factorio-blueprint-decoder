@@ -580,8 +580,8 @@ def ep_filters(stream, index, entity):
 
 def ep_items(stream, index, entity):
 
-    # Interesting point: Modules are not a simple list like icons.
-    # Instead the modules are first sorted and then grouped by type.
+    # Interesting point: Items are not a simple list like icons.
+    # Instead the items are first sorted and then grouped by type.
     # So building an assembler with modules Eff1, Sp1, Eff1, Sp1 the blueprint
     # only contains the data "Sp1: 2, Eff:2". So some details are omitted.
 
@@ -1581,7 +1581,6 @@ def eh_mining_drill(stream, index, entity):
     # modules
     ep_items(stream, index, entity)
 
-    # Strange: only one trailing zero-byte instead of 5!
     stream.expect(0x00)
 
 
@@ -1621,7 +1620,7 @@ def eh_furnace(stream, index, entity):
 
     # modules
     ep_items(stream, index, entity)
-    # Strange: only one trailing zero-byte instead of 5!
+
     stream.expect(0x00)
 
 
@@ -1636,13 +1635,12 @@ def eh_assembling_machine(stream, index, entity):
 
     # modules
     ep_items(stream, index, entity)
-
-    # Strange: only one trailing zero-byte instead of 5!
     stream.expect(0x00)
 
 
 def eh_lab(stream, index, entity):
     stream.expect(*[0x00]*24)
+    # modules
     ep_items(stream, index, entity)
     stream.expect(0x00)
 
@@ -1651,8 +1649,8 @@ def eh_beacon(stream, index, entity):
     stream.expect(0x00)
     stream.expect(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f) # 1.0d
     stream.expect(*[0x00]*8)
+    # modules
     ep_items(stream, index, entity)
-    # Strange: only one trailing zero-byte instead of 5!
     stream.expect(0x00)
 
 
@@ -1765,8 +1763,8 @@ def eh_rocket_silo(stream, index, entity):
     if auto_launch:
         entity["auto_launch"] = True
 
+    # modules
     ep_items(stream, index, entity)
-    # Strange: only one trailing zero-byte instead of 5!
     stream.expect(0x00)
 
 
