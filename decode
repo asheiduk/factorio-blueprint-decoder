@@ -21,8 +21,14 @@ def decode_version(version: int):
         return version >> bits & 0xffff
     return ( _(48), _(32), _(16), _(0) )
 
+def version_string(version: int) -> str:
+    return ".".join(map(str, decode_version(version)))
+
+
 STABLE_1_0_0_0 = encode_version(1,0,0)
 STABLE_1_1_19_0 = encode_version(1,1,19)
+
+MINIMUM_VERSION = STABLE_1_0_0_0
 
 
 version = None  # global state is not nice but that's how it is for now.
@@ -2357,6 +2363,9 @@ def parse_blueprint_library(stream: PrimitiveStream):
     global version
     version = library_version
 
+    if version < MINIMUM_VERSION:
+        raise ParseError(f"Blueprint file format is to old: {version_string(version)}. Minimum version is {version_string(MINIMUM_VERSION)}. Sorry :-(")
+
     stream.expect(0x00)
 
     parse_migrations(stream, result)
@@ -2437,6 +2446,9 @@ def parse_blueprint(stream: PrimitiveStream, index, library_version):
             index_version = result["version"]
             version = index_version
 
+            if version < MINIMUM_VERSION:
+                raise ParseError(f"Blueprint index format is to old: {version_string(version)}. Minimum version is {version_string(MINIMUM_VERSION)}.")
+
             stream.expect(0x00)
             index = parse_index(stream, result)
 
@@ -2456,6 +2468,9 @@ def parse_blueprint(stream: PrimitiveStream, index, library_version):
         # Note: The index version and the blueprint version CAN be different!
         # Encountered an index with version 1.0.0.0 and a blueprint with 0.18.29.0
         # inside a library of version 1.1.15.0
+
+        if version < MINIMUM_VERSION:
+            raise ParseError(f"Blueprint format is to old: {version_string(version)}. Minimum version is {version_string(MINIMUM_VERSION)}.")
 
         stream.expect(0x00)
 
