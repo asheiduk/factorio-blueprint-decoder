@@ -1,0 +1,131 @@
+#!/usr/bin/python3
+
+import json
+import struct
+import sys
+
+
+
+class ParseError(Exception):
+    pass
+
+################################################################
+#
+# primitives
+
+class PrimitiveStream:
+
+    def __init__(self, f):
+        self._f = f
+
+    def _read(self, format):
+        return struct.unpack(
+            format,
+            self._f.read(struct.calcsize(format)))[0]
+
+    def tell(self):
+        return self._f.tell()
+
+    def bytes(self, length):
+        return self._f.read(length)
+
+    def bool(self):
+        data = self.u8()
+        if data != 0x00 and data != 0x01:
+            position = self.tell() - 1
+            raise ParseError(f"invalid boolean value {data:#04x} at position {position} ({position:#x})")
+        return data == 0x01
+
+    def u8(self):
+        return self._read("<B")
+
+    def u16(self):
+        return self._read("<H")
+
+    def u32(self):
+        return self._read("<I")
+
+    # see https://en.wikipedia.org/wiki/Double-precision_floating-point_format#Double-precision_examples
+    # for remarkable examples like "0x3ff0_0000_0000_0000" for "1"
+    def f64(self):
+        return self._read("<d")
+
+
+################################################################
+#
+# property-tree
+
+#
+# https://wiki.factorio.com/Property_tree
+#
+def read_property_tree(stream):
+    type = stream.u8()
+    any_type = stream.bool() #ignored
+    if type == 0:       # None
+        return None
+    elif type == 1:     # Bool
+        return stream.bool()
+    elif type == 2:     # Number
+        return stream.f64()
+    elif type == 3:     # String
+        return read_string(stream)
+    elif type == 4:     # List
+        return read_list(stream)
+    elif type == 5:     # Dictionary
+        return read_dictionary(stream)
+    else:
+        position = stream.tell() - 2
+        raise ParseError(f"invalid type {type} in property tree at position {position} ({position:#x})")
+
+
+def read_string(stream):
+    is_none = stream.bool()
+    if is_none:
+        return None
+    else:
+        length = stream.u8()
+        if length == 0xff:
+            lengh = stream.u32()
+        return stream.bytes(length).decode("utf-8")
+
+
+def read_list(stream):
+    result = []
+    count = stream.u32()
+    for i in range(count):
+        entry_name = read_string(stream) # ignored
+        entry_value = read_property_tree(stream)
+        result.append(entry_value)
+    return result
+
+
+def read_dictionary(stream):
+    result = {}
+    count = stream.u32()
+    for i in range(count):
+        entry_name = read_string(stream)
+        entry_value = read_property_tree(stream)
+        result[entry_name] = entry_value
+    return result
+
+
+################################################################
+#
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        filename = "mod-settings.dat"
+    else:
+        filename = sys.argv[1]
+    with open(filename, "rb") as f:
+        stream = PrimitiveStream(f)
+
+        version = (stream.u16(), stream.u16(), stream.u16(), stream.u16())
+        version = ".".join(map(str, version))
+        print(f"version: {version}", file=sys.stderr, flush=True)
+
+        flag = stream.bool() # ignored
+
+        property_tree = read_property_tree(stream)
+
+        json.dump(property_tree, sys.stdout, indent=4, sort_keys=False, ensure_ascii=False)
