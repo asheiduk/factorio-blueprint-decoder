@@ -736,7 +736,7 @@ def eh_container(stream, index, entity):
     if has_circuit_connections:
         ep_circuit_connections(stream, index, entity)
 
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -802,7 +802,7 @@ def eh_logistic_container(stream, index, entity):
             control_behavior = entity.setdefault("control_behavior", {})
             control_behavior["circuit_mode_of_operation"] = mode_of_operation
 
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -844,7 +844,7 @@ def eh_infinity_container(stream, index, entity):
     remove_unfiltered_items = stream.bool()
     entity["infinity_settings"]["remove_unfiltered_items"] = remove_unfiltered_items
 
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -858,7 +858,7 @@ def eh_storage_tank(stream, index, entity):
         # connections
         ep_circuit_connections(stream, index, entity)
 
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -897,7 +897,7 @@ def eh_transport_belt(stream, index, entity):
         stream.expect(0xff, 0xff, 0xff, 0xff)
         stream.expect(0xff, 0xff, 0xff, 0xff)
 
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -906,7 +906,7 @@ def eh_underground_belt(stream, index, entity):
     ep_direction(stream, index, entity)
     type = stream.mapped_u8("input", "output")
     entity["type"] = type
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -949,7 +949,7 @@ def eh_splitter(stream, index, entity):
     if filter_name:
         entity["filter"] = filter_name
 
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -1034,7 +1034,7 @@ def eh_inserter(stream, index, entity):
         normalize_position(entity["drop_position"])
         normalize_position(entity["pickup_position"])
 
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -1073,19 +1073,20 @@ def eh_electric_pole(stream, index, entity):
         peer_id = stream.u32()
         circuit_id = stream.u8()
 
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
 def eh_pipe(stream, index, entity):
-    stream.expect(*[0x00]*5)
+    stream.expect(0x00)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
 def eh_pipe_to_ground(stream, index, entity):
     stream.expect(0x00)
     ep_direction(stream, index, entity)
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -1107,21 +1108,21 @@ def eh_pump(stream, index, entity):
         ep_logistic_condition(stream, index, entity)
         stream.expect(0x00, 0x00)
 
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
 def eh_straight_rail(stream, index, entity):
     stream.expect(0x00)
     ep_direction(stream, index, entity)
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
 def eh_curved_rail(stream, index, entity):
     stream.expect(0x00)
     ep_direction(stream, index, entity)
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -1195,7 +1196,7 @@ def eh_train_stop(stream, index, entity):
             entity["manual_trains_limit"] = manual_trains_limit
         stream.expect(0x00)
 
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -1230,7 +1231,7 @@ def eh_rail_signal(stream, index, entity):
 
         stream.expect(0x00)
 
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -1263,7 +1264,7 @@ def eh_rail_chain_signal(stream, index, entity):
         if not control_behavior:
             del entity["control_behavior"]
 
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -1312,7 +1313,7 @@ def eh_cargo_wagon(stream, index, entity):
     if not inventory:
         entity["inventory"] = None
 
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -1322,7 +1323,8 @@ def eh_fluid_wagon(stream, index, entity):
 
     ep_railway_vehicle_common(stream, index, entity)
 
-    stream.expect(*[0x00]*36)
+    stream.expect(*[0x00]*32)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -1347,7 +1349,8 @@ def eh_artillery_wagon(stream, index, entity):
     stream.expect(*[0x00]*8)
     stream.expect(0x01, 0x00)
     stream.expect(0x00, 0x00, 0x80, 0x3f) # 1.0f
-    stream.expect(*[0x00]*22)
+    stream.expect(*[0x00]*18)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -1387,7 +1390,7 @@ def eh_roboport(stream, index, entity):
         if control_behavior:
             entity["control_behavior"] = control_behavior
 
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -1408,7 +1411,7 @@ def eh_lamp(stream, index, entity):
             control_behavior = entity.setdefault("control_behavior", {})
             control_behavior["use_colors"] = True
 
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -1448,7 +1451,7 @@ def eh_arithmetic_combinator(stream, index, entity):
     if output_signal:
         conditions["output_signal"] = output_signal
 
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -1487,7 +1490,7 @@ def eh_decider_combinator(stream, index, entity):
 
     conditions["copy_count_from_input"] = copy_count_from_input
 
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -1524,7 +1527,7 @@ def eh_constant_combinator(stream, index, entity):
 
     ep_direction(stream, index, entity)
 
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -1579,7 +1582,7 @@ def eh_power_switch(stream, index, entity):
 
         stream.expect(0x00, 0x00)
 
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -1619,26 +1622,27 @@ def eh_programmable_speaker(stream, index, entity):
             "note_id": stream.u32(),
         }
 
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
 def eh_boiler(stream, index, entity):
     stream.expect(0x00)
     ep_direction(stream, index, entity)
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
 def eh_generator(stream, index, entity):
     stream.expect(*[0x00]*29)
     ep_direction(stream, index, entity)
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
 def eh_solar_panel(stream, index, entity):
-    stream.expect(*[0x00]*5)
+    stream.expect(0x00)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -1658,17 +1662,19 @@ def eh_accumulator(stream, index, entity):
             "output_signal": output_signal
         }
 
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
 def eh_reactor(stream, index, entity):
-    stream.expect(*[0x00]*7)
+    stream.expect(*[0x00]*3)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
 def eh_heat_pipe(stream, index, entity):
-    stream.expect(*[0x00]*6)
+    stream.expect(0x00, 0x00)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -1733,7 +1739,7 @@ def eh_offshore_pump(stream, index, entity):
 
         stream.expect(0x00, 0x00)
 
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -1788,7 +1794,7 @@ def eh_beacon(stream, index, entity):
 
 def eh_land_mine(stream, index, entity):
     stream.expect(0x00, 0x78, 0x00, 0x00, 0x00)
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -1813,7 +1819,7 @@ def eh_wall(stream, index, entity):
         ep_circuit_condition(stream, index, entity)
         stream.expect(0x00)
 
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -1822,7 +1828,8 @@ def eh_gate(stream, index, entity):
     ep_direction(stream, index, entity)
 
     stream.expect(0x00, 0x00, 0x80, 0x3f)    # 1.0f
-    stream.expect(*[0x00]*13)
+    stream.expect(*[0x00]*9)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -1848,7 +1855,8 @@ def eh_electric_turret(stream, index, entity):
     stream.expect(0x08) # maybe fixed "direction"
     stream.expect(*[0x00]*16)
     stream.expect(0xff, 0xff, 0xff, 0xff)
-    stream.expect(*[0x00]*8)
+    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -1859,7 +1867,8 @@ def eh_fluid_turret(stream, index, entity):
     ep_direction(stream, index, entity)
     stream.expect(*[0x00]*16)
     stream.expect(0xff, 0xff, 0xff, 0xff)
-    stream.expect(*[0x00]*23)
+    stream.expect(*[0x00]*19)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -1890,7 +1899,8 @@ def eh_artillery_turret(stream, index, entity):
 def eh_radar(stream, index, entity):
     stream.expect(*[0x00]*17)
     stream.expect(0x9a, 0x99, 0x19, 0x3e)
-    stream.expect(*[0x00]*5)
+    stream.expect(0x00)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -1922,7 +1932,7 @@ def eh_loader(stream, index, entity):
     stream.expect(*[0x00]*4)
     ep_filters(stream, index, entity)
 
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -1952,7 +1962,8 @@ def eh_electric_energy_interface(stream, index, entity):
     buffer_size = stream.f64()
     entity["buffer_size"] = normalize_float(buffer_size)
 
-    stream.expect(*[0x00]*12)
+    stream.expect(*[0x00]*8)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -1973,7 +1984,7 @@ def eh_infinity_pipe(stream, index, entity):
             "mode": mode
         }
 
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -1986,7 +1997,7 @@ def eh_heat_interface(stream, index, entity):
     mode = stream.mapped_u8("at-least", "at-most", "exactly")
     entity["mode"] = mode
 
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -2003,7 +2014,7 @@ def eh_linked_belt(stream, index, entity):
     if belt_link:
         entity["belt_link"] = belt_link
 
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -2014,7 +2025,7 @@ def eh_linked_container(stream, index, entity):
     link_id = stream.u32()
     entity["link_id"] = link_id
 
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
@@ -2022,7 +2033,7 @@ def eh_linked_container(stream, index, entity):
 def eh_burner_generator(stream, index, entity):
     stream.expect(*[0x00]*13)
     ep_direction(stream, index, entity)
-    stream.expect(*[0x00]*4)
+    ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
 
