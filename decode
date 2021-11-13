@@ -554,6 +554,7 @@ def ep_bar(stream, index, entity):
 
 
 # maybe helpfull: https://wiki.factorio.com/Types/Direction
+# Turrets seem to support an additional value `8`.
 def ep_direction(stream, index, entity):
     direction = stream.u8()
     if direction:
@@ -561,6 +562,10 @@ def ep_direction(stream, index, entity):
 
 
 def ep_orientation(stream, index, entity):
+    # 00 00 00 00 = 0.0f  -> North
+    # 00 00 80 3e = 0.25f -> East
+    # 00 00 00 3f = 0.5f  -> South
+    # 00 00 40 3f = 0.75f -> West
     orientation = stream.f32()
     orientation = normalize_float(orientation)
     entity["orientation"] = orientation
@@ -688,13 +693,26 @@ def ep_turret_common(stream, index, entity):
     stream.expect(*[0x00]*17)
 
     # Strictly speaking: artillery-turret doesn't have "orientation" besides 0.0f.
+    ep_orientation(stream, index, entity)
 
-    # 00 00 00 00 = 0.0f  -> North
-    # 00 00 80 3e = 0.25f -> East
-    # 00 00 00 3f = 0.5f  -> South
-    # 00 00 40 3f = 0.75f -> West
-    orientation = stream.f32()
-    debug(f"#\tignored orientation {orientation}")
+
+def fixup_turret_direction(stream, index, entity):
+    direction = entity.get("direction", None)
+    orientation = entity.pop("orientation", 0.0)
+    if direction == 8:
+        # This "precedence" is not backed by hard facts!
+        # But there are also no counterexamples.
+        #
+        # The vanilla game pins `direction` always to `8` for some turret
+        # types like gun-turrets. But at least one modded turret
+        # (shotgun-ammo-turret-rampant-arsenal) managed to store "synchronized"
+        # `direction`/`orientation` values -- just like vanilla flamethrower
+        # turrets.
+        direction = int(8 * orientation)
+        if direction:
+            entity["direction"] = direction
+        else:
+            del entity["direction"]
 
 
 #
@@ -1838,7 +1856,7 @@ def eh_ammo_turret(stream, index, entity):
 
     # same for ammo-turret and electric-turret:
     stream.expect(*[0x00]*12)
-    stream.expect(0x08) # maybe fixed "direction"
+    ep_direction(stream, index, entity)
     stream.expect(*[0x00]*16)
     stream.expect(0xff, 0xff, 0xff, 0xff)
     stream.expect(*[0x00]*4)
@@ -1846,18 +1864,29 @@ def eh_ammo_turret(stream, index, entity):
     ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
 
+    # `gun-turrets` store the special fixed value `8` in `direction` and no
+    # `orientation` by default.
+    # They export *neither* field! On import only `direction` is read and
+    # the equivalent `orientation` value is stored.
+    # Modded turrets like `shotgun-ammo-turret-rampant-arsenal` (Warptorio)
+    # managed to store synchronized values in both fields though.
+    fixup_turret_direction(stream, index, entity)
+
 
 def eh_electric_turret(stream, index, entity):
     ep_turret_common(stream, index, entity)
 
     # same for ammo-turret and electric-turret:
     stream.expect(*[0x00]*12)
-    stream.expect(0x08) # maybe fixed "direction"
+    ep_direction(stream, index, entity)
     stream.expect(*[0x00]*16)
     stream.expect(0xff, 0xff, 0xff, 0xff)
     stream.expect(*[0x00]*4)
     ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
+
+    # The `laser-turret` behaves like the vanilla `gun-turret`.
+    fixup_turret_direction(stream, index, entity)
 
 
 def eh_fluid_turret(stream, index, entity):
@@ -1870,6 +1899,12 @@ def eh_fluid_turret(stream, index, entity):
     stream.expect(*[0x00]*19)
     ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
+
+    # The vanilla `flamethrower-turret` stores synchronized
+    # `direction` and `orientation` fields and also exports
+    # and imports the `direction` field. So an export/import
+    # roundtrip is possible without any loss.
+    fixup_turret_direction(stream, index, entity)
 
 
 def eh_artillery_turret(stream, index, entity):
@@ -1894,6 +1929,11 @@ def eh_artillery_turret(stream, index, entity):
     # Shells -- Currently this is not setable in a vanilla game:
     ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
+
+    # The vanilla `artillery-turret` stores, exports and imports the
+    # `direction` field making lossless roundtrips possible. The
+    # `orientation` field is always pinned to `0.0`.
+    fixup_turret_direction(stream, index, entity)
 
 
 def eh_radar(stream, index, entity):
