@@ -1938,7 +1938,7 @@ def eh_artillery_turret(stream, index, entity):
 
 def eh_radar(stream, index, entity):
     stream.expect(*[0x00]*17)
-    stream.expect(0x9a, 0x99, 0x19, 0x3e)
+    stream.expect(0x9a, 0x99, 0x19, 0x3e) # 0.15f
     stream.expect(0x00)
     ep_items(stream, index, entity)
     ep_tags(stream, index, entity)
