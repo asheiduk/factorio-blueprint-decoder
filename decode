@@ -2025,7 +2025,9 @@ def eh_infinity_pipe(stream, index, entity):
     fluid_name = read_name(stream, index, Index.FLUID)
     percentage = stream.f64()
     temperature = stream.f64()
-    mode = stream.mapped_u8("at-least", "at-most", "exactly")
+    # "add"/"remove" are valid since v1.1.33:
+    # https://wiki.factorio.com/Version_history/1.1.0#1.1.33
+    mode = stream.mapped_u8("at-least", "at-most", "exactly", "add", "remove")
 
     if fluid_name:
         entity["infinity_settings"] = {
@@ -2045,7 +2047,9 @@ def eh_heat_interface(stream, index, entity):
     temperature = stream.f64()
     entity["temperature"] = normalize_float(temperature)
 
-    mode = stream.mapped_u8("at-least", "at-most", "exactly")
+    # "add"/"remove" are valid since v1.1.33:
+    # https://wiki.factorio.com/Version_history/1.1.0#1.1.33
+    mode = stream.mapped_u8("at-least", "at-most", "exactly", "add", "remove")
     entity["mode"] = mode
 
     ep_items(stream, index, entity)
