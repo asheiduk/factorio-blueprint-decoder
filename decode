@@ -27,6 +27,7 @@ def version_string(version: int) -> str:
 
 STABLE_1_0_0_0 = encode_version(1,0,0)
 STABLE_1_1_19_0 = encode_version(1,1,19)
+V_1_1_43_0 = encode_version(1,1,43)
 
 MINIMUM_VERSION = STABLE_1_0_0_0
 
@@ -2418,39 +2419,62 @@ def parse_entities(stream, index, result):
 def parse_schedules(stream, index, result):
     schedules_count = stream.count8()
     schedules = []
+    if schedules_count:
+        debug(f"schedules: {schedules_count}")
     for sc in range(schedules_count):
+        debug(f"    [{sc}] schedule:")
         schedule = {
             "schedule": []
         }
 
         locomotives = schedule["locomotives"] = []
         locomotive_count = stream.count8()
+        debug(f"    locomotives: {locomotive_count}")
         for lo in range(locomotive_count):
             locomotive_id = stream.u32()
             locomotives.append(locomotive_id)
 
+        # https://wiki.factorio.com/Blueprint_string_format#Schedule_Record_object
+        # https://lua-api.factorio.com/latest/Concepts.html#TrainScheduleRecord
         station_count = stream.count8()
-
+        debug(f"    stations: {station_count}")
         for st in range(station_count):
             station_position = stream.tell()
             station_name = stream.string()
             station = {
                 "station": station_name,
             }
+            debug(f"        [{st}] @{station_position:#x} '{station_name}'");
 
             # Strange 1: Only case where something else than a flag enables additional data.
             # Strange 2: The "temporary" flag down below would fit but can't be used for parsing (to late)
             if not station_name:
-                # There seems to be no way to resolve this to anything recognizable.
-                # Doesn't matter much because the export string also contains nothing.
-                stream.ignore(4, "temp. destination")
+                # Release-Note  1.1.43:
+                #       Added LuaEntity::connected_rail_direction read.
+                #       Added TrainScheduleRecord::rail_direction.
+                # see:
+                #   https://lua-api.factorio.com/1.1.42/Concepts.html#TrainScheduleRecord
+                #   https://lua-api.factorio.com/1.1.43/Concepts.html#TrainScheduleRecord
+                if version < V_1_1_43_0:
+                    # There seems to be no way to resolve this to anything recognizable.
+                    # NOT canditates:
+                    #   - entity_ids or indizes
+                    #   - (short) coordinates
+                    # Doesn't matter much because the export string also contains nothing.
+                    stream.ignore(4, "rail")
+                else:
+                    # "rail" -- Seems to be pinned to zero now.
+                    stream.expect(0x00, 0x00, 0x00, 0x00)
+                    # "rail_direction"
+                    stream.bool()
 
+            # https://wiki.factorio.com/Blueprint_string_format#Wait_Condition_object
+            # https://lua-api.factorio.com/latest/Concepts.html#WaitCondition
             wait_conditions = []
             wait_condition_count = stream.u32()
             for wc in range(wait_condition_count):
                 wait_condition = {}
 
-                # https://wiki.factorio.com/Blueprint_string_format#Wait_Condition_object
                 wait_condition_types = (
                     "time",
                     "full",
