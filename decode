@@ -416,7 +416,9 @@ def read_condition(stream, index: Index):
         return None
 
     condition = {}
-    condition["first_signal"] = first_signal
+    if first_signal:
+        condition["first_signal"] = first_signal
+
     condition["comparator"] = comparator
     # The export does not output data if it is hidden in the UI.
     if use_constant:
@@ -617,9 +619,7 @@ def ep_logistic_condition(stream, index, entity):
     if logistic_connected:
         control_behavior = entity.setdefault("control_behavior", {})
         control_behavior["connect_to_logistic_network"] = True
-    else:
-        if "control_behavior" in entity:
-            entity["control_behavior"].pop("logistic_condition", None)
+
 
 def ep_railway_vehicle_common(stream, index, entity):
     stream.expect(*[0x00]*10, 0x01)
@@ -1422,7 +1422,18 @@ def eh_lamp(stream, index, entity):
         ep_circuit_condition(stream, index, entity)
         ep_logistic_condition(stream, index, entity)
 
-        stream.expect(0x00, 0x00)
+        # Strange: Why a copy of the previous flag?
+        # Strange: Why only for lamps? All other relevant entities also have
+        #   two bytes free here.
+        # Neither of these provides any hints:
+        # https://lua-api.factorio.com/latest/LuaControlBehavior.html#LuaLampControlBehavior.brief
+        # https://lua-api.factorio.com/latest/LuaControlBehavior.html#LuaGenericOnOffControlBehavior.brief
+        logistic_connected_copy = stream.bool()
+        logistic_connected = entity.get("control_behavior", {}).get("connect_to_logistic_network", False)
+        if logistic_connected != logistic_connected_copy:
+            raise ParseError(f"different value 'connect_to_logistic_network' ({logistic_connected}) and its special copy for lamps ({logistic_connected_copy})")
+
+        stream.expect(0x00)
 
         use_colors = stream.bool()
         if use_colors:
