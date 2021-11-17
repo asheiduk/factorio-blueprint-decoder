@@ -573,6 +573,48 @@ def ep_orientation(stream, index, entity):
     entity["orientation"] = orientation
 
 
+def ep_logistic_settings(stream, index, entity):
+    # 1: active provider
+    # 2: storage
+    # 3: requester
+    # 4: passive provider
+    # 5: buffer
+    logistic_mode = stream.u8()  # not used in export
+    if not 0 <= logistic_mode <= 5:
+        raise ParseError(f"unknown logistic mode {logistic_mode}")
+
+    stream.expect(0x03)
+
+    request_filters = []
+    filter_count = stream.count()
+    for f in range(filter_count):
+        item_name = read_name(stream, index, Index.ITEM)
+        item_count = stream.u32()
+        stream.expect(0x00)
+        if item_name:
+            request_filters.append({
+                "index": f + 1,
+                "name": item_name,
+                "count": item_count
+            })
+    if request_filters:
+        entity["request_filters"] = request_filters
+
+    if logistic_mode in (2,3,5) or version >= STABLE_1_1_19_0:
+        # In v1.0.0 every logistic chest which can have logistic-filters
+        # or -requests has the flag "request from buffers". But the UI
+        # shows this flag only for requester chests.
+        # In v1.0.0 the existence of the flag correlates with the number
+        # of filters because a fixed number of slots were always allocated
+        # for a specific type of chest.
+        # Since 1.1.19 the number of filter slots can be extended (and
+        # possibly shrunk), so this may not be a stable criteria any more.
+        # So it's nice that the flag is always present since v1.1.19.
+        request_from_buffers = stream.bool()
+        if request_from_buffers:
+            entity["request_from_buffers"] = True
+
+
 def ep_circuit_connections(stream, index, entity, own_circuit_id="1"):
     connections = {}
 
@@ -767,49 +809,12 @@ def eh_logistic_container(stream, index, entity):
     ep_bar(stream, index, entity)
 
     stream.expect(0x00)
-    stream.expect(0x01)
 
-    # 1: active provider
-    # 2: storage
-    # 3: requester
-    # 4: passive provider
-    # 5: buffer
-    logistic_mode = stream.u8()  # not used in export
-    if not 0 <= logistic_mode <= 5:
-        raise ParseError(f"unknown logistic mode {logistic_mode}")
-
-    stream.expect(0x03)
-
-    request_filters = []
-    filter_count = stream.count()
-    for f in range(filter_count):
-        item_name = read_name(stream, index, Index.ITEM)
-        item_count = stream.u32()
-        stream.expect(0x00)
-        if item_name:
-            request_filters.append({
-                "index": f + 1,
-                "name": item_name,
-                "count": item_count
-            })
-    if request_filters:
-        entity["request_filters"] = request_filters
-
-    if logistic_mode in (2,3,5) or version >= STABLE_1_1_19_0:
-        # In v1.0.0 every logistic chest which can have logistic-filters
-        # or -requests has the flag "request from buffers". But the UI
-        # shows this flag only for requester chests.
-        # In v1.0.0 the existence of the flag correlates with the number
-        # of filters because a fixed number of slots were always allocated
-        # for a specific type of chest.
-        # Since 1.1.19 the number of filter slots can be extended (and
-        # possibly shrunk), so this may not be a stable criteria any more.
-        # So it's nice that the flag is always present since v1.1.19.
-        request_from_buffers = stream.bool()
-        if request_from_buffers:
-            entity["request_from_buffers"] = True
-
-    stream.expect(0x00, 0x00)
+    # request filters and "request from buffers"
+    has_logistic_settings = stream.bool()
+    if has_logistic_settings:
+        ep_logistic_settings(stream, index, entity)
+        stream.expect(0x00, 0x00)
 
     # circuit connections
     has_circuit_connections = stream.bool()
@@ -832,7 +837,13 @@ def eh_infinity_container(stream, index, entity):
     # restriction aka. "bar"
     ep_bar(stream, index, entity)
 
-    stream.expect(0x00, 0x00)
+    stream.expect(0x00)
+
+    # request filters and "request from buffers"
+    has_logistic_settings = stream.bool()
+    if has_logistic_settings:
+        ep_logistic_settings(stream, index, entity)
+        stream.expect(0x00, 0x00)
 
     # circuit connections
     has_circuit_connections = stream.bool()
