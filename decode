@@ -292,7 +292,7 @@ class PrimitiveStream:
         data = self.u8()
         if data == 0xff:
             position = self.tell()
-            raise ParseError("unexpected flexible length 0xff at {position} ({position:#x})")
+            raise ParseError(f"unexpected flexible length 0xff at {position} ({position:#x})")
         return data
 
     def count16(self):
@@ -781,7 +781,7 @@ def eh_logistic_container(stream, index, entity):
     stream.expect(0x03)
 
     request_filters = []
-    filter_count = stream.count8()
+    filter_count = stream.count()
     for f in range(filter_count):
         item_name = read_name(stream, index, Index.ITEM)
         item_count = stream.u32()
@@ -845,7 +845,7 @@ def eh_infinity_container(stream, index, entity):
     entity["infinity_settings"] = {}
 
     filters = []
-    filter_count = stream.count8()
+    filter_count = stream.count()
     for f in range(filter_count):
         item_name = read_name(stream, index, Index.ITEM)
         item_count = stream.u32()
