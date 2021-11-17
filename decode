@@ -549,9 +549,19 @@ def ep_bar(stream, index, entity):
         "infinity-chest" : 0x30,
         # trains
         "cargo-wagon"	 : 0x28,
+        # Editor Extensions
+        "ee-infinity-chest"                  : 0x64,
+        "ee-infinity-chest-active-provider"  : 0x64,
+        "ee-infinity-chest-passive-provider" : 0x64,
+        "ee-infinity-chest-storage"          : 0x64,
+        "ee-infinity-chest-buffer"           : 0x64,
+        "ee-infinity-chest-requester"        : 0x64,
+        "ee-aggregate-chest"                 : -1,
+        "ee-aggregate-chest-passive-provider": -1,
+        "ee-infinity-cargo-wagon"            : 0x64,
     }
     default_bar = bar_defaults.get(entity["name"], None)
-    if not default_bar or default_bar != bar:
+    if default_bar != -1 and default_bar != bar:
         entity["bar"] = bar
 
 
