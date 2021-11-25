@@ -9,32 +9,6 @@ import traceback
 from enum import Enum
 import io
 
-################################################################
-#
-# versions
-
-def encode_version(v0: int, v1: int, v2: int, v3: int = 0):
-    return (v0 << 48) + (v1 << 32) + (v2 << 16) + v3
-
-def decode_version(version: int):
-    def _(bits):
-        return version >> bits & 0xffff
-    return ( _(48), _(32), _(16), _(0) )
-
-def version_string(version: int) -> str:
-    return ".".join(map(str, decode_version(version)))
-
-
-V_1_0_0_0 = encode_version(1,0,0)   # first stable in 1.0 -- obviously
-V_1_1_0_0 = encode_version(1,1,0)   # first EXPERIMENTAL in 1.1
-V_1_1_4_0 = encode_version(1,1,4)
-V_1_1_19_0 = encode_version(1,1,19) # first stable in 1.1 -- not so obvious
-V_1_1_43_0 = encode_version(1,1,43)
-
-STABLE_V_1_1 = V_1_1_19_0   # marker for "somewhere between 1.0 and first stable 1.1"
-
-MINIMUM_VERSION = V_1_0_0_0
-
 
 version = None  # global state is not nice but that's how it is for now.
 
@@ -71,6 +45,40 @@ def normalize_position(p):
 
 class ParseError(Exception):
     pass
+
+
+################################################################
+#
+# Version
+
+class Version(int):
+    def __new__(cls, v0: int, v1: int, v2: int, v3: int = 0):
+        encoded = (v0 << 48) + (v1 << 32) + (v2 << 16) + v3
+        return super().__new__(cls, encoded)
+
+    def __format__(self, spec):
+        decoded = self._decode()
+        return format(".".join(map(str, decoded)), spec)
+
+    def __repr__(self):
+        v0, v1, v2, v3 = self.decode()
+        return f"Version({v0}, {v1}, {v2}, {v3})"
+
+    def _decode(self):
+        def _(bits):
+            return int(self) >> bits & 0xffff
+        return ( _(48), _(32), _(16), _(0) )
+
+
+V_1_0_0_0  = Version(1,0,0)  # first stable in 1.0 -- obviously
+V_1_1_0_0  = Version(1,1,0)  # first EXPERIMENTAL in 1.1
+V_1_1_4_0  = Version(1,1,4)
+V_1_1_19_0 = Version(1,1,19) # first stable in 1.1 -- not so obvious
+V_1_1_43_0 = Version(1,1,43)
+
+STABLE_V_1_1 = V_1_1_19_0   # marker for "somewhere between 1.0 and first stable 1.1"
+
+MINIMUM_VERSION = V_1_0_0_0
 
 
 ################################################################
@@ -2204,7 +2212,7 @@ def parse_version(stream, result):
         stream.u16(),
     )
     debug(f"version: {'.'.join(map(str, version))}")
-    result["version"] = encode_version(*version)
+    result["version"] = Version(*version)
     if opt.x:
         result["_version_"] = version
 
@@ -2626,7 +2634,7 @@ def parse_blueprint_library(stream: PrimitiveStream):
     version = library_version
 
     if version < MINIMUM_VERSION:
-        raise ParseError(f"Blueprint file format is to old: {version_string(version)}. Minimum version is {version_string(MINIMUM_VERSION)}. Sorry :-(")
+        raise ParseError(f"Blueprint file format is to old: {version}. Minimum version is {MINIMUM_VERSION}. Sorry :-(")
 
     stream.expect(0x00)
 
@@ -2709,7 +2717,7 @@ def parse_blueprint(stream: PrimitiveStream, index, library_version):
             version = index_version
 
             if version < MINIMUM_VERSION:
-                raise ParseError(f"Blueprint index format is to old: {version_string(version)}. Minimum version is {version_string(MINIMUM_VERSION)}.")
+                raise ParseError(f"Blueprint index format is to old: {version}. Minimum version is {MINIMUM_VERSION}.")
 
             stream.expect(0x00)
             index = parse_index(stream, result)
@@ -2732,7 +2740,7 @@ def parse_blueprint(stream: PrimitiveStream, index, library_version):
         # inside a library of version 1.1.15.0
 
         if version < MINIMUM_VERSION:
-            raise ParseError(f"Blueprint format is to old: {version_string(version)}. Minimum version is {version_string(MINIMUM_VERSION)}.")
+            raise ParseError(f"Blueprint format is to old: {version}. Minimum version is {MINIMUM_VERSION}.")
 
         stream.expect(0x00)
 
