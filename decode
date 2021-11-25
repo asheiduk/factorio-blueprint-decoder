@@ -25,11 +25,15 @@ def version_string(version: int) -> str:
     return ".".join(map(str, decode_version(version)))
 
 
-STABLE_1_0_0_0 = encode_version(1,0,0)
-STABLE_1_1_19_0 = encode_version(1,1,19)
+V_1_0_0_0 = encode_version(1,0,0)   # first stable in 1.0 -- obviously
+V_1_1_0_0 = encode_version(1,1,0)   # first EXPERIMENTAL in 1.1
+V_1_1_4_0 = encode_version(1,1,4)
+V_1_1_19_0 = encode_version(1,1,19) # first stable in 1.1 -- not so obvious
 V_1_1_43_0 = encode_version(1,1,43)
 
-MINIMUM_VERSION = STABLE_1_0_0_0
+STABLE_V_1_1 = V_1_1_19_0   # marker for "somewhere between 1.0 and first stable 1.1"
+
+MINIMUM_VERSION = V_1_0_0_0
 
 
 version = None  # global state is not nice but that's how it is for now.
@@ -611,7 +615,7 @@ def ep_logistic_settings(stream, index, entity):
     if request_filters:
         entity["request_filters"] = request_filters
 
-    if logistic_mode in (2,3,5) or version >= STABLE_1_1_19_0:
+    if logistic_mode in (2,3,5) or version >= STABLE_V_1_1:
         # In v1.0.0 every logistic chest which can have logistic-filters
         # or -requests has the flag "request from buffers". But the UI
         # shows this flag only for requester chests.
@@ -1081,7 +1085,11 @@ def eh_inserter(stream, index, entity):
 def eh_electric_pole(stream, index, entity):
     ep_entity_id(stream, index, entity)
 
-    if version >= STABLE_1_1_19_0:
+    # v1.1.0:
+    #   > Power pole connections are saved in the blueprint.
+    #   > They still auto connect to other poles outside the blueprint.
+    # https://wiki.factorio.com/Version_history/1.1.0#1.1.0
+    if version >= V_1_1_0_0:
         # Strange: first and only zero-terminated list.
         # Even stranger: first and only  occurence of an implicitly
         # terminated list!
@@ -1212,7 +1220,7 @@ def eh_train_stop(stream, index, entity):
 
         stream.expect(*[0x00]*4)
 
-        if version >= STABLE_1_1_19_0:
+        if version >= STABLE_V_1_1:
             read_trains_count = stream.bool()
             trains_count_signal = read_signal(stream, index)
             if read_trains_count:
@@ -1227,7 +1235,7 @@ def eh_train_stop(stream, index, entity):
 
     ep_color(stream, index, entity)
 
-    if version >= STABLE_1_1_19_0:
+    if version >= STABLE_V_1_1:
         # -1: unset, so 0 is a valid value
         manual_trains_limit = stream.s32()
         # strange: First time information (set_trains_limit) of an optional
@@ -1279,7 +1287,7 @@ def eh_rail_chain_signal(stream, index, entity):
     ep_entity_id(stream, index, entity)
     ep_direction(stream, index, entity)
 
-    if version >= STABLE_1_1_19_0:
+    if version >= STABLE_V_1_1:
         # strange: a new flag for nothing visible?
         stream.expect(0x01)
 
@@ -1585,7 +1593,11 @@ def eh_constant_combinator(stream, index, entity):
 def eh_power_switch(stream, index, entity):
     ep_entity_id(stream, index, entity)
 
-    if version >= STABLE_1_1_19_0:
+    # v1.1.4:
+    #   > Power switch will now save it's on/off state in blueprints and
+    #   > the state can also be copy-pasted between power switches.
+    #   https://wiki.factorio.com/Version_history/1.1.0#1.1.4
+    if version >= V_1_1_4_0:
         switch_state = stream.bool()
         entity["switch_state"] = switch_state
     else:
@@ -2342,7 +2354,7 @@ def parse_snap_to_grid(stream, result):
         absolute_snapping = stream.bool()
         if absolute_snapping:
             result["absolute-snapping"] = absolute_snapping
-            if version >= STABLE_1_1_19_0:
+            if version >= STABLE_V_1_1:
                 relative = {
                     "x": stream.s32(),
                     "y": stream.s32()
