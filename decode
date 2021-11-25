@@ -2976,7 +2976,7 @@ if __name__ == "__main__":
     verbose(f"file: {opt.filename}")
     with open(opt.filename, "rb") as f:
         library = parse_blueprint_library(PrimitiveStream(f))
-        json.dump(library, sys.stdout, indent=4, sort_keys=True, ensure_ascii=False)
+        json.dump(library, sys.stdout, indent=1, sort_keys=True, ensure_ascii=False)
 
     if skipped_blueprints:
         error(f"ERROR - summary: skipped {skipped_blueprints} unreadable blueprints.")
