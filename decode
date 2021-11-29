@@ -2634,7 +2634,7 @@ def parse_blueprint_library(stream: PrimitiveStream):
     version = library_version
 
     if version < MINIMUM_VERSION:
-        raise ParseError(f"Blueprint file format is to old: {version}. Minimum version is {MINIMUM_VERSION}. Sorry :-(")
+        raise ParseError(f"Blueprint file format is too old: {version}. Minimum version is {MINIMUM_VERSION}. Sorry :-(")
 
     stream.expect(0x00)
 
@@ -2717,7 +2717,7 @@ def parse_blueprint(stream: PrimitiveStream, index, library_version):
             version = index_version
 
             if version < MINIMUM_VERSION:
-                raise ParseError(f"Blueprint index format is to old: {version}. Minimum version is {MINIMUM_VERSION}.")
+                raise ParseError(f"Blueprint index format is too old: {version}. Minimum version is {MINIMUM_VERSION}.")
 
             stream.expect(0x00)
             index = parse_index(stream, result)
@@ -2740,7 +2740,7 @@ def parse_blueprint(stream: PrimitiveStream, index, library_version):
         # inside a library of version 1.1.15.0
 
         if version < MINIMUM_VERSION:
-            raise ParseError(f"Blueprint format is to old: {version}. Minimum version is {MINIMUM_VERSION}.")
+            raise ParseError(f"Blueprint format is too old: {version}. Minimum version is {MINIMUM_VERSION}.")
 
         stream.expect(0x00)
 
