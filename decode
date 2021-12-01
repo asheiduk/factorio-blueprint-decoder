@@ -573,7 +573,7 @@ def ep_bar(stream, index, entity):
         "ee-aggregate-chest-passive-provider": -1,
         "ee-infinity-cargo-wagon"            : 0x64,
     }
-    default_bar = bar_defaults.get(entity["name"], None)
+    default_bar = bar_defaults.get(entity["name"])
     if default_bar != -1 and default_bar != bar:
         entity["bar"] = bar
 
@@ -762,7 +762,7 @@ def ep_turret_common(stream, index, entity):
 
 
 def fixup_turret_direction(stream, index, entity):
-    direction = entity.get("direction", None)
+    direction = entity.get("direction")
     orientation = entity.pop("orientation", 0.0)
     if direction == 8:
         # This "precedence" is not backed by hard facts!
@@ -1362,7 +1362,7 @@ def eh_cargo_wagon(stream, index, entity):
     # But `ep_bar` actualle requires a real entity argument. :-(
     # TODO: better handling
     ep_bar(stream, index, entity)
-    bar = entity.get("bar", None)
+    bar = entity.get("bar")
     if bar:
         inventory["bar"] = bar
         del entity["bar"]
@@ -2304,7 +2304,7 @@ def parse_library_objects(stream, index, result, library_version):
                     f"mismatch between content-type '{prefix['prototype']}'"
                     f" and actual content item {entry.prototype}")
 
-            handler = object_handlers.get(entry.prototype, None)
+            handler = object_handlers.get(entry.prototype)
             if not handler:
                 raise ParseError(f"no handler for {entry.prototype}/{entry.name} ({entry.id:#x})")
 
@@ -2427,7 +2427,7 @@ def parse_entities(stream, index, result):
         stream.expect(0x20)
 
         # parse entity details
-        handler = entity_handlers.get(entry.prototype, None)
+        handler = entity_handlers.get(entry.prototype)
         if not handler:
             raise ParseError(f"no entity handler for {entry.prototype}/{entry.name} ({entry.id:#x})")
         handler(stream, index, entity)
@@ -2560,7 +2560,7 @@ def parse_tiles(stream, index, result):
 
 def fixup_entity_ids(blueprint):
 
-    entities = blueprint.get("entities", None)
+    entities = blueprint.get("entities")
     if not entities:
         return
 
@@ -2838,7 +2838,7 @@ def parse_deconstruction_item(stream: PrimitiveStream, index, library_version):
         for f in range(filter_count):
             name = read_name(stream, index, type)
             if name:
-                unknown_replacement = unknowns.get(f, None)
+                unknown_replacement = unknowns.get(f)
                 if unknown_replacement:
                     name = unknown_replacement
                 debug(f"    [{f}]: {name}")
@@ -2928,7 +2928,7 @@ def parse_upgrade_item(stream: PrimitiveStream, index, library_version):
         type = stream.mapped_u8(Index.ENTITY, Index.ITEM)
         name = read_name(stream, index, type)
         if name:
-            unknown_replacement = unknowns.get(m, None)
+            unknown_replacement = unknowns.get(m)
             if unknown_replacement:
                 name = unknown_replacement
             return {
