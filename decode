@@ -872,8 +872,10 @@ def eh_infinity_container(stream, index, entity):
     has_circuit_connections = stream.bool()
     if has_circuit_connections:
         ep_circuit_connections(stream, index, entity)
-        # strange: is this some padding?
-        stream.expect(0x00)
+        mode_of_operation = stream.u8()
+        if mode_of_operation:
+           control_behavior = entity.setdefault("control_behavior", {})
+           control_behavior["circuit_mode_of_operation"] = mode_of_operation
 
     # infinity settings
     entity["infinity_settings"] = {}
