@@ -61,7 +61,7 @@ class Version(int):
         return format(".".join(map(str, decoded)), spec)
 
     def __repr__(self):
-        v0, v1, v2, v3 = self.decode()
+        v0, v1, v2, v3 = self._decode()
         return f"Version({v0}, {v1}, {v2}, {v3})"
 
     def _decode(self):
