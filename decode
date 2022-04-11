@@ -2568,7 +2568,13 @@ def parse_schedules(stream, index, result):
         debug(f"    locomotives: {locomotive_count}")
         for lo in range(locomotive_count):
             locomotive_id = stream.u32()
-            locomotives.append(locomotive_id)
+            if locomotive_id:
+                debug(f"        {locomotive_id}")
+                locomotives.append(locomotive_id)
+            else:
+                # Actually I cannot recreate the situation but there are two reports.
+                # One of them contained NO train related stuff :-/
+                debug(f"        {locomotive_id} (ignored)")
 
         # https://wiki.factorio.com/Blueprint_string_format#Schedule_Record_object
         # https://lua-api.factorio.com/latest/Concepts.html#TrainScheduleRecord
@@ -2650,7 +2656,10 @@ def parse_schedules(stream, index, result):
 
             schedule["schedule"].append(station)
 
-        schedules.append(schedule)
+        if locomotives:
+            schedules.append(schedule)
+        else:
+            debug(f"    skipping schedule -- no valid locomotives!")
 
     if schedules:
         result["schedules"] = schedules
