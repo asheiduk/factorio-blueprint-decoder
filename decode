@@ -8,6 +8,8 @@ import time
 import traceback
 from enum import Enum
 import io
+import zlib
+import base64
 
 
 version = None  # global state is not nice but that's how it is for now.
@@ -3115,13 +3117,21 @@ if __name__ == "__main__":
     parser.add_argument("-x", "--extended", action="store_true", dest="x",
         help="extended output: add voluminous stuff found in .dat but not used in .export"
         " Currently:\n - migrations\n - prototype index")
+    parser.add_argument("-e", "--encode-export-string", action="store_true", dest="e",
+        help="converts into a packed import/export string")
     parser.add_argument("filename", nargs="?", default="blueprint-storage.dat")
     opt = parser.parse_args()
 
     verbose(f"file: {opt.filename}")
     with open(opt.filename, "rb") as f:
         library = parse_blueprint_library(PrimitiveStream(f))
-        json.dump(library, sys.stdout, indent=1, sort_keys=True, ensure_ascii=False)
+        if opt.e:
+            json_str = json.dumps(library, separators=(",", ":"),ensure_ascii=False ).encode("utf8")
+            compressed = zlib.compress(json_str, 9)
+            encoded = base64.b64encode(compressed)
+            print( '0' + encoded.decode("utf8") )
+        else:
+            json.dump(library, sys.stdout, indent=1, sort_keys=True, ensure_ascii=False)
 
     if skipped_blueprints:
         error(f"ERROR - summary: skipped {skipped_blueprints} unreadable blueprints.")
