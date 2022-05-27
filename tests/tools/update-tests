@@ -1,0 +1,33 @@
+#!/bin/bash
+
+# usage: update-tests *.dat
+
+# TODO: special handling of 
+#		- rotated laser/gun turrets in bps-1.1.19-tests
+#		- removed mods in bps-miniloader-book-rmmod
+
+
+dowork()(
+	set -x
+	"$@"
+)
+
+for dat in "$@"
+do
+	export="${dat%.dat}.export"
+
+	echo
+	echo "#"
+	echo "# updating $dat and $export"
+	echo "#"
+	echo
+
+	dowork cp "$dat" factorio/blueprint-storage.dat
+
+	echo "TODO: load game, wiggle blueprints, export book to string, quit game, press enter"
+	read dummy
+
+	dowork cp factorio/blueprint-storage.dat "$dat"
+	dowork xclip -o -sel clip > "$export"
+	
+done
