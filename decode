@@ -826,9 +826,6 @@ def eh_container(stream, index, entity):
     if has_circuit_connections:
         ep_circuit_connections(stream, index, entity)
 
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
-
 
 def eh_logistic_container(stream, index, entity):
 
@@ -857,9 +854,6 @@ def eh_logistic_container(stream, index, entity):
         if mode_of_operation:
             control_behavior = entity.setdefault("control_behavior", {})
             control_behavior["circuit_mode_of_operation"] = mode_of_operation
-
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
 
 
 def eh_infinity_container(stream, index, entity):
@@ -911,9 +905,6 @@ def eh_infinity_container(stream, index, entity):
     remove_unfiltered_items = stream.bool()
     entity["infinity_settings"]["remove_unfiltered_items"] = remove_unfiltered_items
 
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
-
 
 def eh_storage_tank(stream, index, entity):
     ep_entity_id(stream, index, entity)
@@ -926,9 +917,6 @@ def eh_storage_tank(stream, index, entity):
     if has_circuit_connections:
         # connections
         ep_circuit_connections(stream, index, entity)
-
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
 
 
 def eh_transport_belt(stream, index, entity):
@@ -967,9 +955,6 @@ def eh_transport_belt(stream, index, entity):
         stream.expect(0xff, 0xff, 0xff, 0xff)
         stream.expect(0xff, 0xff, 0xff, 0xff)
 
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
-
 
 def eh_underground_belt(stream, index, entity):
     stream.expect(0x00)
@@ -978,8 +963,6 @@ def eh_underground_belt(stream, index, entity):
     ep_direction(stream, index, entity)
     type = stream.mapped_u8("input", "output")
     entity["type"] = type
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
 
 
 def eh_splitter(stream, index, entity):
@@ -1022,9 +1005,6 @@ def eh_splitter(stream, index, entity):
     filter_name = read_name(stream, index, Index.ITEM)
     if filter_name:
         entity["filter"] = filter_name
-
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
 
 
 def eh_inserter(stream, index, entity):
@@ -1109,9 +1089,6 @@ def eh_inserter(stream, index, entity):
         normalize_position(entity["drop_position"])
         normalize_position(entity["pickup_position"])
 
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
-
 
 def eh_electric_pole(stream, index, entity):
     ep_entity_id(stream, index, entity)
@@ -1154,16 +1131,11 @@ def eh_electric_pole(stream, index, entity):
         peer_id = stream.u32()
         circuit_id = stream.u8()
 
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
-
 
 def eh_pipe(stream, index, entity):
     stream.expect(0x00)
     if version >= V_1_1_51_4:
         stream.expect(0x00)
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
 
 
 def eh_pipe_to_ground(stream, index, entity):
@@ -1171,8 +1143,6 @@ def eh_pipe_to_ground(stream, index, entity):
     if version >= V_1_1_51_4:
         stream.expect(0x00)
     ep_direction(stream, index, entity)
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
 
 
 def eh_pump(stream, index, entity):
@@ -1194,17 +1164,12 @@ def eh_pump(stream, index, entity):
         ep_logistic_condition(stream, index, entity)
         stream.expect(0x00, 0x00)
 
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
-
 
 def eh_straight_rail(stream, index, entity):
     stream.expect(0x00)
     if version >= V_1_1_51_4:
         stream.expect(0x00)
     ep_direction(stream, index, entity)
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
 
 
 def eh_curved_rail(stream, index, entity):
@@ -1212,8 +1177,6 @@ def eh_curved_rail(stream, index, entity):
     if version >= V_1_1_51_4:
         stream.expect(0x00)
     ep_direction(stream, index, entity)
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
 
 
 def eh_train_stop(stream, index, entity):
@@ -1288,9 +1251,6 @@ def eh_train_stop(stream, index, entity):
             entity["manual_trains_limit"] = manual_trains_limit
         stream.expect(0x00)
 
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
-
 
 def eh_rail_signal(stream, index, entity):
     ep_entity_id(stream, index, entity)
@@ -1325,9 +1285,6 @@ def eh_rail_signal(stream, index, entity):
 
         stream.expect(0x00)
 
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
-
 
 def eh_rail_chain_signal(stream, index, entity):
     ep_entity_id(stream, index, entity)
@@ -1360,9 +1317,6 @@ def eh_rail_chain_signal(stream, index, entity):
         if not control_behavior:
             del entity["control_behavior"]
 
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
-
 
 def eh_locomotive(stream, index, entity):
     ep_entity_id(stream, index, entity)
@@ -1377,11 +1331,6 @@ def eh_locomotive(stream, index, entity):
     ep_color(stream, index, entity)
 
     stream.expect(*[0x00]*6)
-
-    # fuel
-    ep_items(stream, index, entity)
-
-    ep_tags(stream, index, entity)
 
 
 def eh_cargo_wagon(stream, index, entity):
@@ -1413,9 +1362,6 @@ def eh_cargo_wagon(stream, index, entity):
     if not inventory:
         entity["inventory"] = None
 
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
-
 
 def eh_fluid_wagon(stream, index, entity):
     stream.expect(0x00, 0x00)
@@ -1426,8 +1372,6 @@ def eh_fluid_wagon(stream, index, entity):
     ep_railway_vehicle_common(stream, index, entity)
 
     stream.expect(*[0x00]*32)
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
 
 
 def eh_artillery_wagon(stream, index, entity):
@@ -1454,8 +1398,6 @@ def eh_artillery_wagon(stream, index, entity):
     stream.expect(0x01, 0x00)
     stream.expect(0x00, 0x00, 0x80, 0x3f) # 1.0f
     stream.expect(*[0x00]*18)
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
 
 
 def eh_roboport(stream, index, entity):
@@ -1496,9 +1438,6 @@ def eh_roboport(stream, index, entity):
         if control_behavior:
             entity["control_behavior"] = control_behavior
 
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
-
 
 def eh_lamp(stream, index, entity):
     ep_entity_id(stream, index, entity)
@@ -1529,9 +1468,6 @@ def eh_lamp(stream, index, entity):
         if use_colors:
             control_behavior = entity.setdefault("control_behavior", {})
             control_behavior["use_colors"] = True
-
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
 
 
 def eh_arithmetic_combinator(stream, index, entity):
@@ -1572,9 +1508,6 @@ def eh_arithmetic_combinator(stream, index, entity):
     if output_signal:
         conditions["output_signal"] = output_signal
 
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
-
 
 def eh_decider_combinator(stream, index, entity):
     ep_entity_id(stream, index, entity)
@@ -1613,9 +1546,6 @@ def eh_decider_combinator(stream, index, entity):
 
     conditions["copy_count_from_input"] = copy_count_from_input
 
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
-
 
 def eh_constant_combinator(stream, index, entity):
     # entity ids
@@ -1652,9 +1582,6 @@ def eh_constant_combinator(stream, index, entity):
         control_behavior["is_on"] = False
 
     ep_direction(stream, index, entity)
-
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
 
 
 def eh_power_switch(stream, index, entity):
@@ -1714,9 +1641,6 @@ def eh_power_switch(stream, index, entity):
 
         stream.expect(0x00, 0x00)
 
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
-
 
 def eh_programmable_speaker(stream, index, entity):
     ep_entity_id(stream, index, entity)
@@ -1756,17 +1680,12 @@ def eh_programmable_speaker(stream, index, entity):
             "note_id": stream.u32(),
         }
 
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
-
 
 def eh_boiler(stream, index, entity):
     stream.expect(0x00)
     if version >= V_1_1_51_4:
         stream.expect(0x00)
     ep_direction(stream, index, entity)
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
 
 
 def eh_generator(stream, index, entity):
@@ -1775,16 +1694,12 @@ def eh_generator(stream, index, entity):
         stream.expect(0x00)
     stream.expect(*[0x00]*28)
     ep_direction(stream, index, entity)
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
 
 
 def eh_solar_panel(stream, index, entity):
     stream.expect(0x00)
     if version >= V_1_1_51_4:
         stream.expect(0x00)
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
 
 
 def eh_accumulator(stream, index, entity):
@@ -1804,17 +1719,12 @@ def eh_accumulator(stream, index, entity):
             "output_signal": output_signal
         }
 
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
-
 
 def eh_reactor(stream, index, entity):
     stream.expect(0x00)
     if version >= V_1_1_51_4:
         stream.expect(0x00)
     stream.expect(*[0x00]*2)
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
 
 
 def eh_heat_pipe(stream, index, entity):
@@ -1822,8 +1732,6 @@ def eh_heat_pipe(stream, index, entity):
     if version >= V_1_1_51_4:
         stream.expect(0x00)
     stream.expect(0x00)
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
 
 
 def eh_mining_drill(stream, index, entity):
@@ -1865,11 +1773,6 @@ def eh_mining_drill(stream, index, entity):
 
         stream.expect(0x00)
 
-    # modules
-    ep_items(stream, index, entity)
-
-    ep_tags(stream, index, entity)
-
 
 def eh_offshore_pump(stream, index, entity):
     ep_entity_id(stream, index, entity)
@@ -1891,9 +1794,6 @@ def eh_offshore_pump(stream, index, entity):
 
         stream.expect(0x00, 0x00)
 
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
-
 
 def eh_furnace(stream, index, entity):
     stream.expect(0x00)
@@ -1910,11 +1810,6 @@ def eh_furnace(stream, index, entity):
 
     stream.expect(*[0x00]*2)
 
-    # modules
-    ep_items(stream, index, entity)
-
-    ep_tags(stream, index, entity)
-
 
 def eh_assembling_machine(stream, index, entity):
     stream.expect(0x00)
@@ -1927,20 +1822,12 @@ def eh_assembling_machine(stream, index, entity):
 
     ep_direction(stream, index, entity)
 
-    # modules
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
-
-
 
 def eh_lab(stream, index, entity):
     stream.expect(0x00)
     if version >= V_1_1_51_4:
         stream.expect(0x00)
     stream.expect(*[0x00]*23)
-    # modules
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
 
 
 def eh_beacon(stream, index, entity):
@@ -1949,9 +1836,6 @@ def eh_beacon(stream, index, entity):
         stream.expect(0x00)
     stream.expect(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f) # 1.0d
     stream.expect(*[0x00]*8)
-    # modules
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
 
 
 def eh_land_mine(stream, index, entity):
@@ -1959,8 +1843,6 @@ def eh_land_mine(stream, index, entity):
     if version >= V_1_1_51_4:
         stream.expect(0x01)     # Strange: Why is that value "1" HERE!
     stream.expect(0x78, 0x00, 0x00, 0x00)
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
 
 
 def eh_wall(stream, index, entity):
@@ -1986,9 +1868,6 @@ def eh_wall(stream, index, entity):
         ep_circuit_condition(stream, index, entity)
         stream.expect(0x00)
 
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
-
 
 def eh_gate(stream, index, entity):
     stream.expect(0x00)
@@ -1998,8 +1877,6 @@ def eh_gate(stream, index, entity):
 
     stream.expect(0x00, 0x00, 0x80, 0x3f)    # 1.0f
     stream.expect(*[0x00]*9)
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
 
 
 def eh_ammo_turret(stream, index, entity):
@@ -2011,9 +1888,6 @@ def eh_ammo_turret(stream, index, entity):
     stream.expect(*[0x00]*16)
     stream.expect(0xff, 0xff, 0xff, 0xff)
     stream.expect(*[0x00]*4)
-    # Ammo -- Currently this is not setable in a vanilla game:
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
 
     # `gun-turrets` store the special fixed value `8` in `direction` and no
     # `orientation` by default.
@@ -2033,8 +1907,6 @@ def eh_electric_turret(stream, index, entity):
     stream.expect(*[0x00]*16)
     stream.expect(0xff, 0xff, 0xff, 0xff)
     stream.expect(*[0x00]*4)
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
 
     # The `laser-turret` behaves like the vanilla `gun-turret`.
     fixup_turret_direction(stream, index, entity)
@@ -2048,8 +1920,6 @@ def eh_fluid_turret(stream, index, entity):
     stream.expect(*[0x00]*16)
     stream.expect(0xff, 0xff, 0xff, 0xff)
     stream.expect(*[0x00]*19)
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
 
     # The vanilla `flamethrower-turret` stores synchronized
     # `direction` and `orientation` fields and also exports
@@ -2077,9 +1947,6 @@ def eh_artillery_turret(stream, index, entity):
     stream.expect(0x01, 0x00)
     stream.expect(0x00, 0x00, 0x80, 0x3f) #1.0f
     stream.expect(*[0x00]*18)
-    # Shells -- Currently this is not setable in a vanilla game:
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
 
     # The vanilla `artillery-turret` stores, exports and imports the
     # `direction` field making lossless roundtrips possible. The
@@ -2094,8 +1961,6 @@ def eh_radar(stream, index, entity):
     stream.expect(*[0x00]*16)
     stream.expect(0x9a, 0x99, 0x19, 0x3e) # 0.15f
     stream.expect(0x00)
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
 
 
 def eh_rocket_silo(stream, index, entity):
@@ -2113,10 +1978,6 @@ def eh_rocket_silo(stream, index, entity):
     if auto_launch:
         entity["auto_launch"] = True
 
-    # modules
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
-
 
 def eh_loader(stream, index, entity):
     stream.expect(0x00)
@@ -2129,9 +1990,6 @@ def eh_loader(stream, index, entity):
 
     stream.expect(*[0x00]*4)
     ep_filters(stream, index, entity)
-
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
 
 
 def eh_loader_1x1(stream, index, entity):
@@ -2163,8 +2021,6 @@ def eh_electric_energy_interface(stream, index, entity):
     entity["buffer_size"] = normalize_float(buffer_size)
 
     stream.expect(*[0x00]*8)
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
 
 
 def eh_infinity_pipe(stream, index, entity):
@@ -2187,9 +2043,6 @@ def eh_infinity_pipe(stream, index, entity):
             "mode": mode
         }
 
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
-
 
 def eh_heat_interface(stream, index, entity):
     stream.expect(0x00)
@@ -2203,9 +2056,6 @@ def eh_heat_interface(stream, index, entity):
     # https://wiki.factorio.com/Version_history/1.1.0#1.1.33
     mode = stream.mapped_u8("at-least", "at-most", "exactly", "add", "remove")
     entity["mode"] = mode
-
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
 
 
 # since v1.1.19
@@ -2222,9 +2072,6 @@ def eh_linked_belt(stream, index, entity):
     if belt_link:
         entity["belt_link"] = belt_link
 
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
-
 
 # since v1.1.19
 def eh_linked_container(stream, index, entity):
@@ -2235,9 +2082,6 @@ def eh_linked_container(stream, index, entity):
     link_id = stream.u32()
     entity["link_id"] = link_id
 
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
-
 
 # reachable via map editor or infinity-chest
 def eh_burner_generator(stream, index, entity):
@@ -2246,8 +2090,6 @@ def eh_burner_generator(stream, index, entity):
         stream.expect(0x00)
     stream.expect(*[0x00]*12)
     ep_direction(stream, index, entity)
-    ep_items(stream, index, entity)
-    ep_tags(stream, index, entity)
 
 
 entity_handlers = {
@@ -2547,7 +2389,12 @@ def parse_entities(stream, index, result):
         if not handler:
             raise ParseError(f"no entity handler for {entry.prototype}/{entry.name} ({entry.id:#x})")
         handler(stream, index, entity)
-    
+
+        # vanilla: modules, fuel; mods&co: ammo, ...
+        ep_items(stream, index, entity)
+
+        ep_tags(stream, index, entity)
+
     if not entities:
         del result["entities"]
 
