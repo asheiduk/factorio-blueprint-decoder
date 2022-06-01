@@ -540,6 +540,11 @@ def ep_entity_id(stream, index, entity):
         # (and their *number*) known.
 
 
+def ep_v1_1_51_4_flag(stream, index, entity, expected_value):
+    if version >= V_1_1_51_4:
+        stream.expect(expected_value)
+
+
 def ep_bar(stream, index, entity):
     # TODO: cargo-wagon wants to call this not with a real entity
     # but with an "inventory" wrapper. Handle this case better.
@@ -754,8 +759,7 @@ def ep_color(stream, index, entity):
 
 
 def ep_turret_common(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x01)     # Strange: Why is that value "1" HERE!
+    ep_v1_1_51_4_flag(stream, index, entity, 0x01) # Strange: Why is that value "1" HERE!
     stream.expect(*[0x00]*4)
     stream.expect(0x00, 0x00, 0x80, 0x3f) # 1.0f
     stream.expect(*[0x00]*17)
@@ -810,8 +814,7 @@ def ep_tags(stream, index, entity):
 # entity handlers (eh_*)
 
 def eh_container(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
 
     # restriction aka. "bar"
     ep_bar(stream, index, entity)
@@ -823,8 +826,7 @@ def eh_container(stream, index, entity):
 
 
 def eh_logistic_container(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
 
     # restriction aka. "bar"
     ep_bar(stream, index, entity)
@@ -848,8 +850,7 @@ def eh_logistic_container(stream, index, entity):
 
 
 def eh_infinity_container(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
 
     # restriction aka. "bar"
     ep_bar(stream, index, entity)
@@ -894,8 +895,7 @@ def eh_infinity_container(stream, index, entity):
 
 
 def eh_storage_tank(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
     ep_direction(stream, index, entity)
 
     # circuit network connections
@@ -906,8 +906,7 @@ def eh_storage_tank(stream, index, entity):
 
 
 def eh_transport_belt(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
     ep_direction(stream, index, entity)
 
     # circuit network connections
@@ -942,16 +941,14 @@ def eh_transport_belt(stream, index, entity):
 
 
 def eh_underground_belt(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
     ep_direction(stream, index, entity)
     type = stream.mapped_u8("input", "output")
     entity["type"] = type
 
 
 def eh_splitter(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
     ep_direction(stream, index, entity)
 
     priorities = stream.u8()
@@ -991,8 +988,7 @@ def eh_splitter(stream, index, entity):
 
 
 def eh_inserter(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
 
     # 0x01 -- override_stack_size
     # 0x02 -- filter_mode: 0=blacklist, 1(default)=whitelist
@@ -1073,8 +1069,7 @@ def eh_inserter(stream, index, entity):
 
 
 def eh_electric_pole(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
 
     # v1.1.0:
     #   > Power pole connections are saved in the blueprint.
@@ -1114,19 +1109,16 @@ def eh_electric_pole(stream, index, entity):
 
 
 def eh_pipe(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
 
 
 def eh_pipe_to_ground(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
     ep_direction(stream, index, entity)
 
 
 def eh_pump(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
     ep_direction(stream, index, entity)
 
     stream.expect(*[0x00]*20)
@@ -1144,20 +1136,17 @@ def eh_pump(stream, index, entity):
 
 
 def eh_straight_rail(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
     ep_direction(stream, index, entity)
 
 
 def eh_curved_rail(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
     ep_direction(stream, index, entity)
 
 
 def eh_train_stop(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
 
     station = stream.string()
     entity["station"] = station
@@ -1228,8 +1217,7 @@ def eh_train_stop(stream, index, entity):
 
 
 def eh_rail_signal(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
     ep_direction(stream, index, entity)
 
     has_circuit_connections = stream.bool()
@@ -1261,8 +1249,7 @@ def eh_rail_signal(stream, index, entity):
 
 
 def eh_rail_chain_signal(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
     ep_direction(stream, index, entity)
 
     if version >= STABLE_V_1_1:
@@ -1292,8 +1279,7 @@ def eh_rail_chain_signal(stream, index, entity):
 
 
 def eh_locomotive(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
     stream.expect(0x00)
 
     ep_orientation(stream, index, entity)
@@ -1306,8 +1292,7 @@ def eh_locomotive(stream, index, entity):
 
 
 def eh_cargo_wagon(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
     stream.expect(0x00)
     ep_orientation(stream, index, entity)
 
@@ -1336,8 +1321,7 @@ def eh_cargo_wagon(stream, index, entity):
 
 
 def eh_fluid_wagon(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
     stream.expect(0x00)
     ep_orientation(stream, index, entity)
 
@@ -1347,8 +1331,7 @@ def eh_fluid_wagon(stream, index, entity):
 
 
 def eh_artillery_wagon(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
     stream.expect(0x00)
     ep_orientation(stream, index, entity)
 
@@ -1373,8 +1356,7 @@ def eh_artillery_wagon(stream, index, entity):
 
 
 def eh_roboport(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
 
     has_circuit_connections = stream.bool()
     if has_circuit_connections:
@@ -1411,8 +1393,7 @@ def eh_roboport(stream, index, entity):
 
 
 def eh_lamp(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
     has_circuit_connections = stream.bool()
     if has_circuit_connections:
         #connections
@@ -1441,8 +1422,7 @@ def eh_lamp(stream, index, entity):
 
 
 def eh_arithmetic_combinator(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
     ep_direction(stream, index, entity)
 
     # connections
@@ -1479,8 +1459,7 @@ def eh_arithmetic_combinator(stream, index, entity):
 
 
 def eh_decider_combinator(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
     ep_direction(stream, index, entity)
 
     # connections
@@ -1516,8 +1495,7 @@ def eh_decider_combinator(stream, index, entity):
 
 
 def eh_constant_combinator(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
 
     # circuit connections
     ep_circuit_connections(stream, index, entity)
@@ -1550,8 +1528,7 @@ def eh_constant_combinator(stream, index, entity):
 
 
 def eh_power_switch(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
 
     # v1.1.4:
     #   > Power switch will now save it's on/off state in blueprints and
@@ -1607,8 +1584,7 @@ def eh_power_switch(stream, index, entity):
 
 
 def eh_programmable_speaker(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
 
     # https://lua-api.factorio.com/latest/Concepts.html#ProgrammableSpeakerParameters
     entity["parameters"] = {
@@ -1645,26 +1621,22 @@ def eh_programmable_speaker(stream, index, entity):
 
 
 def eh_boiler(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
     ep_direction(stream, index, entity)
 
 
 def eh_generator(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
     stream.expect(*[0x00]*28)
     ep_direction(stream, index, entity)
 
 
 def eh_solar_panel(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
 
 
 def eh_accumulator(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
     stream.expect(*[0x00]*13)
 
     has_circuit_connections = stream.bool()
@@ -1680,20 +1652,17 @@ def eh_accumulator(stream, index, entity):
 
 
 def eh_reactor(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
     stream.expect(*[0x00]*2)
 
 
 def eh_heat_pipe(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
     stream.expect(0x00)
 
 
 def eh_mining_drill(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
     ep_direction(stream, index, entity)
 
     stream.expect(*[0x00]*36)
@@ -1731,8 +1700,7 @@ def eh_mining_drill(stream, index, entity):
 
 
 def eh_offshore_pump(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
     ep_direction(stream, index, entity)
 
     stream.expect(*[0x00]*4)
@@ -1751,8 +1719,7 @@ def eh_offshore_pump(stream, index, entity):
 
 
 def eh_furnace(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
     stream.expect(*[0x00]*2)
 
     # Vanilla furnaces cannot be rotated in game. Importing a manipulating
@@ -1766,8 +1733,7 @@ def eh_furnace(stream, index, entity):
 
 
 def eh_assembling_machine(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
 
     recipe = read_name(stream, index, Index.RECIPE)
     if recipe:
@@ -1777,27 +1743,23 @@ def eh_assembling_machine(stream, index, entity):
 
 
 def eh_lab(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
     stream.expect(*[0x00]*23)
 
 
 def eh_beacon(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
     stream.expect(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f) # 1.0d
     stream.expect(*[0x00]*8)
 
 
 def eh_land_mine(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x01)     # Strange: Why is that value "1" HERE!
+    ep_v1_1_51_4_flag(stream, index, entity, 0x01) # Strange: Why is that value "1" HERE!
     stream.expect(0x78, 0x00, 0x00, 0x00)
 
 
 def eh_wall(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
     stream.expect(0x00)
 
     has_circuit_connections = stream.bool()
@@ -1819,8 +1781,7 @@ def eh_wall(stream, index, entity):
 
 
 def eh_gate(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
     ep_direction(stream, index, entity)
 
     stream.expect(0x00, 0x00, 0x80, 0x3f)    # 1.0f
@@ -1903,16 +1864,14 @@ def eh_artillery_turret(stream, index, entity):
 
 
 def eh_radar(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x01)     # Strange: Why is that value "1" HERE!
+    ep_v1_1_51_4_flag(stream, index, entity, 0x01) # Strange: Why is that value "1" HERE!
     stream.expect(*[0x00]*16)
     stream.expect(0x9a, 0x99, 0x19, 0x3e) # 0.15f
     stream.expect(0x00)
 
 
 def eh_rocket_silo(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
 
     recipe = read_name(stream, index, Index.RECIPE)
     if recipe:
@@ -1926,8 +1885,7 @@ def eh_rocket_silo(stream, index, entity):
 
 
 def eh_loader(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
     ep_direction(stream, index, entity)
 
     type = stream.mapped_u8("input", "output")
@@ -1942,8 +1900,7 @@ def eh_loader_1x1(stream, index, entity):
 
 
 def eh_electric_energy_interface(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
 
     power_production = stream.f64()
     # strange default
@@ -1968,8 +1925,7 @@ def eh_electric_energy_interface(stream, index, entity):
 
 
 def eh_infinity_pipe(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
 
     fluid_name = read_name(stream, index, Index.FLUID)
     percentage = stream.f64()
@@ -1988,8 +1944,7 @@ def eh_infinity_pipe(stream, index, entity):
 
 
 def eh_heat_interface(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
 
     temperature = stream.f64()
     entity["temperature"] = normalize_float(temperature)
@@ -2002,8 +1957,7 @@ def eh_heat_interface(stream, index, entity):
 
 # since v1.1.19
 def eh_linked_belt(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
     ep_direction(stream, index, entity)
 
     type = stream.mapped_u8("input", "output")
@@ -2016,8 +1970,7 @@ def eh_linked_belt(stream, index, entity):
 
 # since v1.1.19
 def eh_linked_container(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
 
     link_id = stream.u32()
     entity["link_id"] = link_id
@@ -2025,8 +1978,7 @@ def eh_linked_container(stream, index, entity):
 
 # reachable via map editor or infinity-chest
 def eh_burner_generator(stream, index, entity):
-    if version >= V_1_1_51_4:
-        stream.expect(0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
     stream.expect(*[0x00]*12)
     ep_direction(stream, index, entity)
 
