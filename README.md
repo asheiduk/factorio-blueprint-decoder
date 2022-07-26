@@ -37,6 +37,8 @@ Usually only stable versions of the game are supported. Currently these are:
  - **1.1.51**: The file format did not change *much* up to this version. 1.1.51 added one
 		byte to all entities but this has been fixed now.
 
+ - **1.1.62**: The file format changed by adding a flag to containers.
+
 So all vanilla stuff should work but mods can turn up yet unknown fields. Please file issues for that.
 
 ## Usage

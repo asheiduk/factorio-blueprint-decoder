@@ -76,6 +76,7 @@ V_1_1_4_0  = Version(1,1,4)
 V_1_1_19_0 = Version(1,1,19) # first stable in 1.1 -- not so obvious
 V_1_1_43_0 = Version(1,1,43)
 V_1_1_51_4 = Version(1,1,51,4)
+V_1_1_62_5 = Version(1,1,62,5)
 
 STABLE_V_1_1 = V_1_1_19_0   # marker for "somewhere between 1.0 and first stable 1.1"
 
@@ -545,6 +546,15 @@ def ep_v1_1_51_4_flag(stream, index, entity, expected_value):
         stream.expect(expected_value)
 
 
+def ep_v1_1_62_5_flag(stream, index, entity):
+    # Release-Notes 1.1.62:
+    #   > Added support for container entities with filters
+    #   > by using inventory_type = "with_bar" or "with_filters_and_bar".
+    # So this could be a flag opening a "filters" section.
+    if version >= V_1_1_62_5:
+        stream.expect(0x00)
+
+
 def ep_bar(stream, index, entity):
     # TODO: cargo-wagon wants to call this not with a real entity
     # but with an "inventory" wrapper. Handle this case better.
@@ -815,6 +825,7 @@ def ep_tags(stream, index, entity):
 
 def eh_container(stream, index, entity):
     ep_v1_1_51_4_flag(stream, index, entity, 0x00)
+    ep_v1_1_62_5_flag(stream, index, entity)
 
     # restriction aka. "bar"
     ep_bar(stream, index, entity)
@@ -827,6 +838,7 @@ def eh_container(stream, index, entity):
 
 def eh_logistic_container(stream, index, entity):
     ep_v1_1_51_4_flag(stream, index, entity, 0x00)
+    ep_v1_1_62_5_flag(stream, index, entity)
 
     # restriction aka. "bar"
     ep_bar(stream, index, entity)
@@ -851,6 +863,7 @@ def eh_logistic_container(stream, index, entity):
 
 def eh_infinity_container(stream, index, entity):
     ep_v1_1_51_4_flag(stream, index, entity, 0x00)
+    ep_v1_1_62_5_flag(stream, index, entity)
 
     # restriction aka. "bar"
     ep_bar(stream, index, entity)
@@ -1974,6 +1987,8 @@ def eh_linked_container(stream, index, entity):
 
     link_id = stream.u32()
     entity["link_id"] = link_id
+
+    ep_v1_1_62_5_flag(stream, index, entity)
 
 
 # reachable via map editor or infinity-chest
