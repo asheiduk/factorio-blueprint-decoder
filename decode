@@ -338,6 +338,16 @@ class PrimitiveStream:
                 position = self.tell() - 1
                 raise ParseError(f"expected {expected:#04x} but got {actual:#04x} at position {position} ({position:#x})")
 
+    def expect_oneof(self, *expected_values):
+        if not expected_values:
+            raise ValueError("expect at least one byte")
+
+        actual = self.u8()
+        if actual not in set(expected_values):
+            position = self.tell() - 1
+            expected = ", ".join([ f"{b:#04x}" for b in expected_values])
+            raise ParseError(f"expected one of ({expected}) but got {actual:#04x} at position {position} ({position:#x})")
+
     def ignore(self, size, guess=None):
         file_position = self.tell()
         data = self._f.read(size)
@@ -541,9 +551,17 @@ def ep_entity_id(stream, index, entity):
         # (and their *number*) known.
 
 
-def ep_v1_1_51_4_flag(stream, index, entity, expected_value):
+def ep_v1_1_51_4_flag(stream, index, entity, *expected_values):
     if version >= V_1_1_51_4:
-        stream.expect(expected_value)
+        # * In the vanilla game turrets, land-mines and radar have the
+        #   value 0x01.
+        # * In the vanilla game rail vehicles (locomotive, cargo-wagon,
+        #   fluid-wagon, artillery-wagon) have the value 0x00 but in
+        #   Krastorio 2 the value is 0x01 without any change in the export.
+        if len(expected_values) == 1:
+            stream.expect(*expected_values)
+        else:
+            stream.expect_oneof(*expected_values)
 
 
 def ep_v1_1_62_5_flag(stream, index, entity):
@@ -1292,7 +1310,7 @@ def eh_rail_chain_signal(stream, index, entity):
 
 
 def eh_locomotive(stream, index, entity):
-    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00, 0x01)
     stream.expect(0x00)
 
     ep_orientation(stream, index, entity)
@@ -1305,7 +1323,7 @@ def eh_locomotive(stream, index, entity):
 
 
 def eh_cargo_wagon(stream, index, entity):
-    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00, 0x01)
     stream.expect(0x00)
     ep_orientation(stream, index, entity)
 
@@ -1334,7 +1352,7 @@ def eh_cargo_wagon(stream, index, entity):
 
 
 def eh_fluid_wagon(stream, index, entity):
-    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00, 0x01)
     stream.expect(0x00)
     ep_orientation(stream, index, entity)
 
@@ -1344,7 +1362,7 @@ def eh_fluid_wagon(stream, index, entity):
 
 
 def eh_artillery_wagon(stream, index, entity):
-    ep_v1_1_51_4_flag(stream, index, entity, 0x00)
+    ep_v1_1_51_4_flag(stream, index, entity, 0x00, 0x01)
     stream.expect(0x00)
     ep_orientation(stream, index, entity)
 
