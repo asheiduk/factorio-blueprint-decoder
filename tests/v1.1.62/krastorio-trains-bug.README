@@ -1,0 +1,11 @@
+This is a testcase for Github issue #12.
+
+Recreation:
+
+ - activate Krastorio 2
+ - Create blueprint that contains a cargo wagon / fluid wagon / train locomotive
+   and add it to the blueprint library
+ - exit game
+
+It seems that the strange flag `ep_v1_1_51_4_flag` can have strange values.
+Details are still not clear.
