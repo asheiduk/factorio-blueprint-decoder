@@ -1,0 +1,48 @@
+#!/usr/bin/python3
+
+import argparse
+
+################################################################
+#
+# Version
+
+class Version(int):
+    def __new__(cls, v0: int, v1: int, v2: int, v3: int = 0):
+        encoded = (v0 << 48) + (v1 << 32) + (v2 << 16) + v3
+        return super().__new__(cls, encoded)
+
+    def __format__(self, spec):
+        decoded = self._decode()
+        return format(".".join(map(str, decoded)), spec)
+
+    def __repr__(self):
+        v0, v1, v2, v3 = self._decode()
+        return f"Version({v0}, {v1}, {v2}, {v3})"
+
+    def _decode(self):
+        def _(bits):
+            return int(self) >> bits & 0xffff
+        return ( _(48), _(32), _(16), _(0) )
+
+    @classmethod
+    def fromInt(cls, i: int):
+        # Not nice: Unnecessary decode/encode cyle but at least
+        # it is internal only!
+        return Version(*cls._decode(i))
+
+################################################################
+#
+# main
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Convert between Factorio version specifications like 1.1.51.4 and 281479275020292.")
+    parser.add_argument("version", nargs="+")
+    opt = parser.parse_args()
+
+    for version in opt.version:
+        if "." in version:
+            converted = Version(*(int(s) for s in version.split(".")))
+        else:
+            converted = Version.fromInt(version)
+        print(f"{converted}\t{int(converted)}")
