@@ -77,7 +77,10 @@ V_1_1_19_0 = Version(1,1,19) # first stable in 1.1 -- not so obvious
 V_1_1_43_0 = Version(1,1,43)
 V_1_1_51_4 = Version(1,1,51,4)
 V_1_1_62_5 = Version(1,1,62,5)
+V_1_1_75_1 = Version(1,1,75,1)
+V_1_1_77_2 = Version(1,1,77,2)
 V_1_1_82_4 = Version(1,1,82,4)
+V_1_1_83_4 = Version(1,1,83,4)
 
 STABLE_V_1_1 = V_1_1_19_0   # marker for "somewhere between 1.0 and first stable 1.1"
 
@@ -1929,7 +1932,16 @@ def eh_loader(stream, index, entity):
     type = stream.mapped_u8("input", "output")
     entity["type"] = type
 
+    if version >= V_1_1_75_1:
+        # Old blueprints have 0.0f, redefined blueprints 1.0f.
+        stream.ignore(4, "(in loader)")
+    if version >= V_1_1_77_2:
+        stream.expect(0x00, 0x00)
+    if version >= V_1_1_83_4:
+        stream.expect(0x00, 0x00)
+
     stream.expect(*[0x00]*4)
+    # default: 5 empty filters
     ep_filters(stream, index, entity)
 
 
